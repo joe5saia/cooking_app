@@ -1,0 +1,10 @@
+.DS_Store
+bin/
+coverage.*
+*.out
+*.test
+vendor/
+node_modules/
+dist/
+.vite/
+backend/bin/
