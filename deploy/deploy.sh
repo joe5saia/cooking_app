@@ -146,6 +146,8 @@ if ssh "${SSH_OPTS[@]}" "$SSH_HOST" "command -v rsync >/dev/null 2>&1"; then
     ./ "$SSH_HOST:$REMOTE_DIR_RESOLVED/"
 else
   echo "Remote rsync not found; falling back to tar-over-ssh sync." >&2
+  echo "Stopping running stack (prevents bind-mount invalidation during sync)..." >&2
+  ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --env-file .env -f deploy/compose.yaml down --remove-orphans" >/dev/null 2>&1 || true
   ssh "${SSH_OPTS[@]}" "$SSH_HOST" "find '$REMOTE_DIR_RESOLVED' -mindepth 1 -maxdepth 1 -exec rm -rf {} +"
   COPYFILE_DISABLE=1 COPY_EXTENDED_ATTRIBUTES_DISABLE=1 tar -czf - \
     --exclude='.git' \

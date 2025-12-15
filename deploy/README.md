@@ -77,3 +77,4 @@ Retention:
 
 - Only Caddy ports 80/443 are exposed. Postgres is internal.
 - The backend is configured with `SESSION_COOKIE_SECURE=true` for HTTPS-only cookies.
+- LAN (`COOKING_APP_DOMAIN=:80`): the app is served over `http://<server-ip>/`.
