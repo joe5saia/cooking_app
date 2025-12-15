@@ -1,0 +1,15 @@
+root = "."
+tmp_dir = ".air"
+
+[build]
+cmd = "go build -o .air/api ./cmd/api"
+bin = ".air/api"
+delay = 200
+include_ext = ["go"]
+exclude_dir = [".air", "bin", "vendor", ".git"]
+
+[log]
+time = true
+
+[misc]
+clean_on_exit = true

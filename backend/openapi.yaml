@@ -1,0 +1,878 @@
+openapi: 3.0.3
+info:
+  title: Cooking App API
+  version: 1.0.0
+  description: v1 REST API for the Cooking App MVP.
+servers:
+  - url: /
+tags:
+  - name: health
+  - name: auth
+  - name: tokens
+  - name: users
+  - name: recipe-books
+  - name: tags
+  - name: recipes
+paths:
+  /api/v1/healthz:
+    get:
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required: [ok]
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Login (creates session)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "204":
+          description: Logged in
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+  /api/v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: Logout (clears session)
+      responses:
+        "204":
+          description: Logged out
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      summary: Current user
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/tokens:
+    get:
+      tags: [tokens]
+      summary: List Personal Access Tokens (no secrets)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Token"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    post:
+      tags: [tokens]
+      summary: Create Personal Access Token (secret returned once)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTokenRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateTokenResponse"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/tokens/{id}:
+    delete:
+      tags: [tokens]
+      summary: Revoke Personal Access Token
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      responses:
+        "204":
+          description: Revoked
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/users:
+    get:
+      tags: [users]
+      summary: List users
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    post:
+      tags: [users]
+      summary: Create user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/users/{id}/deactivate:
+    put:
+      tags: [users]
+      summary: Deactivate user
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      responses:
+        "204":
+          description: Deactivated
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/recipe-books:
+    get:
+      tags: [recipe-books]
+      summary: List recipe books
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RecipeBook"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    post:
+      tags: [recipe-books]
+      summary: Create recipe book
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRecipeBookRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecipeBook"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/recipe-books/{id}:
+    put:
+      tags: [recipe-books]
+      summary: Update recipe book
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRecipeBookRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecipeBook"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    delete:
+      tags: [recipe-books]
+      summary: Delete recipe book
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "409":
+          $ref: "#/components/responses/Problem409"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/tags:
+    get:
+      tags: [tags]
+      summary: List tags
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tag"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    post:
+      tags: [tags]
+      summary: Create tag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTagRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/tags/{id}:
+    put:
+      tags: [tags]
+      summary: Update tag
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTagRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    delete:
+      tags: [tags]
+      summary: Delete tag
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/recipes:
+    get:
+      tags: [recipes]
+      summary: List recipes
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: book_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: tag_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: include_deleted
+          in: query
+          schema: { type: boolean }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200 }
+        - name: cursor
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecipeListResponse"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    post:
+      tags: [recipes]
+      summary: Create recipe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecipeUpsertRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecipeDetail"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/recipes/{id}:
+    get:
+      tags: [recipes]
+      summary: Get recipe detail
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecipeDetail"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    put:
+      tags: [recipes]
+      summary: Update recipe (replace semantics)
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecipeUpsertRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecipeDetail"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "409":
+          $ref: "#/components/responses/Problem409"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    delete:
+      tags: [recipes]
+      summary: Soft delete recipe
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/recipes/{id}/restore:
+    put:
+      tags: [recipes]
+      summary: Restore soft-deleted recipe
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      responses:
+        "204":
+          description: Restored
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+components:
+  parameters:
+    UUIDParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  responses:
+    Problem400:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Problem401:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Problem404:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Problem409:
+      description: Conflict
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Problem500:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: cooking_app_session
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    Problem:
+      type: object
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details:
+          type: object
+          additionalProperties: true
+          nullable: true
+      required: [code, message]
+    LoginRequest:
+      type: object
+      properties:
+        username: { type: string }
+        password: { type: string }
+      required: [username, password]
+    MeResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        display_name:
+          type: string
+          nullable: true
+      required: [id, username, display_name]
+    Token:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, name, created_at, last_used_at, expires_at]
+    CreateTokenRequest:
+      type: object
+      properties:
+        name: { type: string }
+        expires_at: { type: string, format: date-time }
+      required: [name]
+    CreateTokenResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        token: { type: string }
+        created_at: { type: string, format: date-time }
+      required: [id, name, token, created_at]
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        username: { type: string }
+        display_name:
+          type: string
+          nullable: true
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+      required: [id, username, display_name, is_active, created_at]
+    CreateUserRequest:
+      type: object
+      properties:
+        username: { type: string }
+        password: { type: string }
+        display_name:
+          type: string
+          nullable: true
+      required: [username, password]
+    RecipeBook:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+      required: [id, name, created_at]
+    CreateRecipeBookRequest:
+      type: object
+      properties:
+        name: { type: string }
+      required: [name]
+    Tag:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+      required: [id, name, created_at]
+    CreateTagRequest:
+      type: object
+      properties:
+        name: { type: string }
+      required: [name]
+    RecipeTag:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+      required: [id, name]
+    RecipeListItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        servings: { type: integer }
+        prep_time_minutes: { type: integer }
+        total_time_minutes: { type: integer }
+        source_url:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        recipe_book_id:
+          type: string
+          format: uuid
+          nullable: true
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecipeTag"
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at: { type: string, format: date-time }
+      required:
+        [
+          id,
+          title,
+          servings,
+          prep_time_minutes,
+          total_time_minutes,
+          source_url,
+          notes,
+          recipe_book_id,
+          tags,
+          deleted_at,
+          updated_at,
+        ]
+    RecipeListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecipeListItem"
+        next_cursor:
+          type: string
+          nullable: true
+      required: [items, next_cursor]
+    RecipeIngredient:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        position: { type: integer }
+        quantity:
+          type: number
+          nullable: true
+        quantity_text:
+          type: string
+          nullable: true
+        unit:
+          type: string
+          nullable: true
+        item: { type: string }
+        prep:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        original_text:
+          type: string
+          nullable: true
+      required: [id, position, quantity, quantity_text, unit, item, prep, notes, original_text]
+    RecipeStep:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        step_number: { type: integer }
+        instruction: { type: string }
+      required: [id, step_number, instruction]
+    RecipeDetail:
+      allOf:
+        - $ref: "#/components/schemas/RecipeListItem"
+        - type: object
+          properties:
+            ingredients:
+              type: array
+              items:
+                $ref: "#/components/schemas/RecipeIngredient"
+            steps:
+              type: array
+              items:
+                $ref: "#/components/schemas/RecipeStep"
+            created_at: { type: string, format: date-time }
+            created_by: { type: string, format: uuid }
+            updated_by: { type: string, format: uuid }
+            deleted_at:
+              type: string
+              format: date-time
+              nullable: true
+          required: [ingredients, steps, created_at, created_by, updated_by, deleted_at]
+    RecipeUpsertRequest:
+      type: object
+      properties:
+        title: { type: string }
+        servings: { type: integer }
+        prep_time_minutes: { type: integer }
+        total_time_minutes: { type: integer }
+        source_url:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        recipe_book_id:
+          type: string
+          format: uuid
+          nullable: true
+        tag_ids:
+          type: array
+          items: { type: string, format: uuid }
+        ingredients:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecipeIngredientUpsert"
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecipeStepUpsert"
+      required:
+        [title, servings, prep_time_minutes, total_time_minutes, recipe_book_id, tag_ids, ingredients, steps]
+    RecipeIngredientUpsert:
+      type: object
+      properties:
+        position: { type: integer }
+        quantity:
+          type: number
+          nullable: true
+        quantity_text:
+          type: string
+          nullable: true
+        unit:
+          type: string
+          nullable: true
+        item: { type: string }
+        prep:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        original_text:
+          type: string
+          nullable: true
+      required: [position, quantity, quantity_text, unit, item, prep, notes, original_text]
+    RecipeStepUpsert:
+      type: object
+      properties:
+        step_number: { type: integer }
+        instruction: { type: string }
+      required: [step_number, instruction]

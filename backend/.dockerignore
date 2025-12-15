@@ -1,0 +1,7 @@
+bin
+.air
+.git
+.idea
+.vscode
+vendor
+**/*_test.go

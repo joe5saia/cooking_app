@@ -1,0 +1,12 @@
+FROM caddy:2-builder AS builder
+
+ARG CADDY_VERSION=v2.10.2
+ARG CADDY_DNS_MODULE=github.com/caddy-dns/cloudflare
+
+# Build a Caddy binary including a DNS provider module for DNS-01 challenges.
+RUN xcaddy build "$CADDY_VERSION" --with "$CADDY_DNS_MODULE"
+
+FROM caddy:2
+
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+

@@ -1,4 +1,4 @@
-# Personal Recipe App (Umami-like) — Product & Technical Specification (MVP v1)
+# Personal Recipe App — Product & Technical Specification (MVP v1)
 
 **Document owner:** You  
 **Audience:** Engineering / AI Agent implementation team  
@@ -9,7 +9,7 @@
 
 ## 1. Executive summary
 
-This document specifies an MVP implementation of a **multi-user, shared recipe management** web application inspired by Umami, optimized for **API access** and future **interoperability**. The system is designed for **self-hosting** on an Ubuntu server and runs via **Docker Compose**, fronted by **Caddy** with **Let’s Encrypt** TLS. The MVP scope focuses on **saving and browsing recipes**, with **recipe books** and **tags** for organization. Meal planning, grocery lists, timers, event streams, exports/importers, and offline support are explicitly out of scope for v1.
+This document specifies an MVP implementation of a **multi-user, shared recipe management** web application, optimized for **API access** and future **interoperability**. The system is designed for **self-hosting** on an Ubuntu server and runs via **Docker Compose**, fronted by **Caddy** with **Let’s Encrypt** TLS. The MVP scope focuses on **saving and browsing recipes**, with **recipe books** and **tags** for organization. Meal planning, grocery lists, timers, event streams, exports/importers, and offline support are explicitly out of scope for v1.
 
 Key constraints:
 - Backend: **Golang** (REST API)
@@ -64,8 +64,8 @@ Key constraints:
 - The system must support a **bootstrap** path to create the first user.
 
 **Bootstrap requirement:** On a fresh database, there must be a safe method to create the first user, such as:
-- A one-time CLI/admin command (`umami-api bootstrap-user ...`)
-- Or a guarded “bootstrap” endpoint enabled only when `users` table is empty and protected by a one-time secret in env (`UMAMI_BOOTSTRAP_SECRET`).
+- A one-time CLI/admin command (example: `cooking_app bootstrap-user --username ... --password ...` with `DATABASE_URL` set)
+- Or a guarded “bootstrap” endpoint enabled only when `users` table is empty and protected by a one-time secret in env (example: `COOKING_APP_BOOTSTRAP_SECRET`).
 
 Recommendation: implement a CLI for bootstrap to avoid any long-lived web bootstrap endpoint.
 
@@ -160,6 +160,10 @@ Recommendation: Caddy serves static assets directly; API is separate container.
 ### 7.1 Conventions
 - Primary keys: `uuid` (v4)
 - Time fields: `timestamptz`
+- Extensions:
+  - `pgcrypto` (for `gen_random_uuid()`)
+  - `citext` (case-insensitive text for usernames/tags/books)
+  - `pg_trgm` (for recipe title search)
 - Required audit fields on all mutable tables:
   - `created_at timestamptz not null`
   - `created_by uuid not null references users(id)`
@@ -175,7 +179,7 @@ Stores authentication credentials and identity.
 
 Fields:
 - `id uuid pk`
-- `username text not null unique` (case-insensitive uniqueness recommended)
+- `username citext not null unique` (case-insensitive uniqueness)
 - `password_hash text not null`
 - `display_name text null`
 - `is_active boolean not null default true`
@@ -194,7 +198,7 @@ Bootstrap note:
 
 #### 7.2.2 `recipe_books`
 - `id uuid pk`
-- `name text not null unique` (or unique per deployment)
+- `name citext not null unique` (or unique per deployment; case-insensitive)
 - Audit fields
 
 Indexes:
@@ -202,7 +206,7 @@ Indexes:
 
 #### 7.2.3 `tags`
 - `id uuid pk`
-- `name text not null unique`
+- `name citext not null unique` (case-insensitive)
 - Audit fields
 
 Indexes:
@@ -224,8 +228,7 @@ Indexes:
 - `recipes_updated_at_idx (updated_at desc)`
 - `recipes_deleted_at_idx (deleted_at)`
 - Title search index:
-  - Option A (simple): `index on lower(title)`
-  - Option B (better contains search): `pg_trgm` + `gin` index on title
+  - **Chosen**: `pg_trgm` + `gin` index on title
     - `create extension if not exists pg_trgm;`
     - `create index recipes_title_trgm_idx on recipes using gin (title gin_trgm_ops);`
 
@@ -236,7 +239,7 @@ Stores structured ingredient lines.
 
 - `id uuid pk`
 - `recipe_id uuid not null references recipes(id) on delete cascade`
-- `position int not null` (0-based or 1-based; decide and standardize)
+- `position int not null` (1-based)
 - `quantity numeric null` *(optional; see below)*
 - `quantity_text text null` *(optional)*  
 - `unit text null`
@@ -291,6 +294,8 @@ Indexes:
 Indexes:
 - `(user_id)`
 - `(expires_at)`
+- Unique:
+  - `(token_hash)` (defensive: prevents accidentally issuing duplicate tokens with the same secret)
 
 **Security requirement:** token secret is displayed **only once** at creation; only hash stored.
 
@@ -362,7 +367,7 @@ Response (secret only returned once):
 {
   "id": "uuid",
   "name": "laptop-cli",
-  "token": "umami_pat_XXXXXXXXXXXXXXXX",
+  "token": "cooking_app_pat_XXXXXXXXXXXXXXXX",
   "created_at": "..."
 }
 ```
@@ -386,6 +391,13 @@ Because all users are admin, any authenticated user may manage users (v1).
 #### 8.4.1 List users
 `GET /api/v1/users`
 
+Response:
+```json
+[
+  { "id":"uuid", "username":"joe", "display_name":null, "is_active":true, "created_at":"..." }
+]
+```
+
 #### 8.4.2 Create user
 `POST /api/v1/users`
 
@@ -394,15 +406,26 @@ Request:
 { "username": "shannon", "password": "...", "display_name": "Shannon" }
 ```
 
+Response:
+```json
+{ "id":"uuid", "username":"shannon", "display_name":"Shannon", "is_active":true, "created_at":"..." }
+```
+
 #### 8.4.3 Deactivate user
 `PUT /api/v1/users/{id}/deactivate` *(optional; recommended)*
+
+Response: `204`
 
 ### 8.5 Recipe Books endpoints
 
 - `GET /api/v1/recipe-books`
 - `POST /api/v1/recipe-books`
 - `PUT /api/v1/recipe-books/{id}`
-- `DELETE /api/v1/recipe-books/{id}` *(consider preventing delete if recipes exist or set null)*
+- `DELETE /api/v1/recipe-books/{id}`
+
+Notes:
+- Book names are unique case-insensitively.
+- Deleting a recipe book fails with `409` when recipes reference it (delete is blocked; update/move recipes first).
 
 ### 8.6 Tags endpoints
 
@@ -411,14 +434,23 @@ Request:
 - `PUT /api/v1/tags/{id}`
 - `DELETE /api/v1/tags/{id}`
 
+Notes:
+- Tag names are unique case-insensitively.
+- Deleting a tag removes its recipe associations (via `ON DELETE CASCADE`).
+
 ### 8.7 Recipes endpoints
 
 #### 8.7.1 List recipes
-`GET /api/v1/recipes?q=&book_id=&tag_id=&include_deleted=`
+`GET /api/v1/recipes?q=&book_id=&tag_id=&include_deleted=&limit=&cursor=`
 
 - Default: `deleted_at is null`
 - Sort: `updated_at desc`
 - Search: title only when `q` present
+- Pagination: cursor-based via `limit` + `cursor` and response `next_cursor`
+
+Pagination parameters:
+- `limit` (optional): 1..200, default 50
+- `cursor` (optional): opaque string from the previous response `next_cursor`
 
 Response:
 ```json
@@ -510,6 +542,7 @@ Validation rules:
 
 - Last write wins; no versioning required in v1.
 - Update should be transactional: update recipe + replace ingredients + replace steps + tags.
+- Updating a soft-deleted recipe returns `409`; restore first.
 
 Response: updated recipe detail.
 
@@ -523,6 +556,7 @@ Response: `204`
 #### 8.7.6 Restore recipe (recommended)
 `PUT /api/v1/recipes/{id}/restore`  
 Behavior: set `deleted_at = null` and update audit fields.
+Response: `204`
 
 ---
 
@@ -573,7 +607,7 @@ Transactional update pattern (recipe update):
 
 ### 9.5 PAT authentication
 - PAT token format:
-  - Prefix: `umami_pat_` + random base64url secret
+  - Prefix: `cooking_app_pat_` + random base64url secret
 - Store only a hash:
   - `token_hash = sha256(secret)` or Argon2 hash for stronger resistance
 - Validate:
@@ -626,9 +660,9 @@ Log each request with:
 
 ### 10.4 API integration approach (maintainability)
 Recommendation:
-- Maintain an **OpenAPI** document in the backend.
-- Generate a typed TS client (`openapi-typescript` or similar).
-- Wrap client calls in TanStack Query hooks:
+- Maintain an **OpenAPI** document in the backend (`backend/openapi.yaml`) and generate a typed TS client (`openapi-typescript` or similar).
+- MVP starting point: a small typed `fetch` wrapper in the frontend + TanStack Query, migrating to generated client later.
+- Wrap API calls in TanStack Query hooks:
   - `useRecipes({q, tagId, bookId})`
   - `useRecipe(id)`
   - `useCreateRecipe()`, `useUpdateRecipe()`
@@ -669,36 +703,39 @@ Implementation approach:
 - Configure Caddy with DNS provider plugin (or use Caddy with supported DNS module image).
 - Provide DNS API credentials via `.env`.
 
-### 11.4 Example `docker-compose.yml` (skeleton)
+### 11.4 Example `deploy/compose.yaml` (skeleton)
 ```yaml
 services:
   db:
     image: postgres:18
     environment:
-      POSTGRES_DB: umami
-      POSTGRES_USER: umami
+      POSTGRES_DB: cooking_app
+      POSTGRES_USER: cooking_app
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks: [internal]
 
   api:
-    build: ./backend
+    build: ../backend
     environment:
-      DATABASE_URL: postgres://umami:${POSTGRES_PASSWORD}@db:5432/umami?sslmode=disable
-      UMAMI_SESSION_SECRET: ${UMAMI_SESSION_SECRET}
-      UMAMI_LOG_FORMAT: json
+      DATABASE_URL: postgres://cooking_app:${POSTGRES_PASSWORD}@db:5432/cooking_app?sslmode=disable
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      HTTP_ADDR: :8080
+      SESSION_COOKIE_SECURE: "true"
     depends_on: [db]
     networks: [internal]
 
   caddy:
-    image: caddy:latest
+    image: caddy:2
     ports:
       - "80:80"
       - "443:443"
+    environment:
+      COOKING_APP_DOMAIN: ${COOKING_APP_DOMAIN}
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./frontend/dist:/srv:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../frontend/dist:/srv:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on: [api]
@@ -713,9 +750,9 @@ volumes:
   caddy_config:
 ```
 
-### 11.5 Example `Caddyfile` (skeleton)
+### 11.5 Example `deploy/Caddyfile` (skeleton)
 ```caddy
-your.domain.example {
+{$COOKING_APP_DOMAIN} {
   encode gzip zstd
 
   # Static frontend
@@ -737,9 +774,12 @@ your.domain.example {
 
 ### 11.6 Backups
 - Nightly `pg_dump` stored locally on the Ubuntu host.
-- Provide a host cron job or systemd timer that runs:
-  - `docker exec <db_container> pg_dump ... > /backups/umami_YYYYMMDD.sql`
-- Retention: decide (e.g., 14 daily + 8 weekly). (TBD)
+- Provide a host cron job or systemd timer that runs a script like `deploy/backup-postgres.sh`:
+  - `docker compose -f deploy/compose.yaml exec -T db pg_dump ...`
+  - output to a host directory (compressed recommended)
+- Retention guidance:
+  - Keep daily backups short (e.g., 14)
+  - Keep weekly backups longer (e.g., 8) by copying one daily backup per week into a `weekly/` folder
 
 ---
 

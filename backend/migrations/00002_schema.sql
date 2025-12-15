@@ -1,0 +1,125 @@
+-- +goose Up
+CREATE TABLE users (
+	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	username citext NOT NULL UNIQUE,
+	password_hash text NOT NULL,
+	display_name text NULL,
+	is_active boolean NOT NULL DEFAULT true,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	created_by uuid NOT NULL REFERENCES users (id),
+	updated_at timestamptz NOT NULL DEFAULT now(),
+	updated_by uuid NOT NULL REFERENCES users (id)
+);
+
+CREATE TABLE recipe_books (
+	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	name citext NOT NULL,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	created_by uuid NOT NULL REFERENCES users (id),
+	updated_at timestamptz NOT NULL DEFAULT now(),
+	updated_by uuid NOT NULL REFERENCES users (id),
+	CONSTRAINT recipe_books_name_unique UNIQUE (name)
+);
+
+CREATE TABLE tags (
+	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	name citext NOT NULL,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	created_by uuid NOT NULL REFERENCES users (id),
+	updated_at timestamptz NOT NULL DEFAULT now(),
+	updated_by uuid NOT NULL REFERENCES users (id),
+	CONSTRAINT tags_name_unique UNIQUE (name)
+);
+
+CREATE TABLE recipes (
+	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	title text NOT NULL,
+	servings int NOT NULL CONSTRAINT recipes_servings_positive_chk CHECK (servings > 0),
+	prep_time_minutes int NOT NULL CONSTRAINT recipes_prep_time_nonneg_chk CHECK (prep_time_minutes >= 0),
+	total_time_minutes int NOT NULL CONSTRAINT recipes_total_time_nonneg_chk CHECK (total_time_minutes >= 0),
+	source_url text NULL,
+	notes text NULL,
+	recipe_book_id uuid NULL REFERENCES recipe_books (id),
+	deleted_at timestamptz NULL,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	created_by uuid NOT NULL REFERENCES users (id),
+	updated_at timestamptz NOT NULL DEFAULT now(),
+	updated_by uuid NOT NULL REFERENCES users (id)
+);
+
+CREATE INDEX recipes_updated_at_idx ON recipes (updated_at DESC);
+CREATE INDEX recipes_deleted_at_idx ON recipes (deleted_at);
+CREATE INDEX recipes_title_trgm_idx ON recipes USING gin (title gin_trgm_ops);
+
+CREATE TABLE recipe_ingredients (
+	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	recipe_id uuid NOT NULL REFERENCES recipes (id) ON DELETE CASCADE,
+	position int NOT NULL CONSTRAINT recipe_ingredients_position_positive_chk CHECK (position >= 1),
+	quantity numeric NULL,
+	quantity_text text NULL,
+	unit text NULL,
+	item text NOT NULL,
+	prep text NULL,
+	notes text NULL,
+	original_text text NULL,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	created_by uuid NOT NULL REFERENCES users (id),
+	updated_at timestamptz NOT NULL DEFAULT now(),
+	updated_by uuid NOT NULL REFERENCES users (id)
+);
+
+CREATE INDEX recipe_ingredients_recipe_id_position_idx ON recipe_ingredients (recipe_id, position);
+
+CREATE TABLE recipe_steps (
+	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	recipe_id uuid NOT NULL REFERENCES recipes (id) ON DELETE CASCADE,
+	step_number int NOT NULL CONSTRAINT recipe_steps_step_number_positive_chk CHECK (step_number >= 1),
+	instruction text NOT NULL,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	created_by uuid NOT NULL REFERENCES users (id),
+	updated_at timestamptz NOT NULL DEFAULT now(),
+	updated_by uuid NOT NULL REFERENCES users (id),
+	CONSTRAINT recipe_steps_recipe_id_step_number_unique UNIQUE (recipe_id, step_number)
+);
+
+CREATE INDEX recipe_steps_recipe_id_step_number_idx ON recipe_steps (recipe_id, step_number);
+
+CREATE TABLE recipe_tags (
+	recipe_id uuid NOT NULL REFERENCES recipes (id) ON DELETE CASCADE,
+	tag_id uuid NOT NULL REFERENCES tags (id) ON DELETE CASCADE,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	created_by uuid NOT NULL REFERENCES users (id),
+	updated_at timestamptz NOT NULL DEFAULT now(),
+	updated_by uuid NOT NULL REFERENCES users (id),
+	PRIMARY KEY (recipe_id, tag_id)
+);
+
+CREATE INDEX recipe_tags_tag_id_idx ON recipe_tags (tag_id);
+
+CREATE TABLE personal_access_tokens (
+	id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+	user_id uuid NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+	name text NOT NULL,
+	token_hash text NOT NULL,
+	last_used_at timestamptz NULL,
+	expires_at timestamptz NULL,
+	created_at timestamptz NOT NULL DEFAULT now(),
+	created_by uuid NOT NULL REFERENCES users (id),
+	updated_at timestamptz NOT NULL DEFAULT now(),
+	updated_by uuid NOT NULL REFERENCES users (id),
+	CONSTRAINT personal_access_tokens_token_hash_unique UNIQUE (token_hash)
+);
+
+CREATE INDEX personal_access_tokens_user_id_idx ON personal_access_tokens (user_id);
+CREATE INDEX personal_access_tokens_expires_at_idx ON personal_access_tokens (expires_at);
+
+-- +goose Down
+DROP TABLE IF EXISTS personal_access_tokens;
+DROP TABLE IF EXISTS recipe_tags;
+DROP TABLE IF EXISTS recipe_steps;
+DROP TABLE IF EXISTS recipe_ingredients;
+DROP TABLE IF EXISTS recipes;
+DROP TABLE IF EXISTS tags;
+DROP TABLE IF EXISTS recipe_books;
+DROP TABLE IF EXISTS users;
+

@@ -1,0 +1,93 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+}
+
+.form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+.input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(231, 234, 240, 0.12);
+  background: rgba(231, 234, 240, 0.04);
+  color: inherit;
+}
+
+.button {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(231, 234, 240, 0.12);
+  background: rgba(231, 234, 240, 0.08);
+  color: inherit;
+  cursor: pointer;
+}
+
+.buttonDanger {
+  border-color: rgba(255, 180, 180, 0.35);
+  background: rgba(255, 180, 180, 0.08);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(231, 234, 240, 0.08);
+  background: rgba(231, 234, 240, 0.03);
+}
+
+.actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.muted {
+  font-size: 0.9rem;
+  opacity: 0.75;
+}
+
+.alert {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 180, 180, 0.35);
+  background: rgba(255, 180, 180, 0.08);
+  color: rgba(255, 220, 220, 0.95);
+}
+
+.badgeDanger {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 180, 180, 0.35);
+  background: rgba(255, 180, 180, 0.08);
+  color: rgba(255, 220, 220, 0.95);
+  font-size: 0.85rem;
+  line-height: 1.3;
+}

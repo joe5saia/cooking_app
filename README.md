@@ -15,10 +15,21 @@ Monorepo containing a Go backend API and a React + TypeScript + Vite frontend, b
 - `make ci` — backend fmt/vet/lint/test + frontend format check/lint/build.
 - Use `make backend-*` or `make frontend-*` targets for focused tasks (see below).
 
+## Local development (Docker Compose)
+- Copy env: `cp .env.example .env` (optional; defaults are fine)
+- Start stack: `make dev-up`
+- URLs:
+  - Frontend: `http://localhost:5173`
+  - Backend health: `http://localhost:8080/healthz`
+  - API health: `http://localhost:5173/api/v1/healthz` (proxied by Vite)
+- Stop stack: `make dev-down`
+
 ## Backend (from repo root or `backend/`)
 - Run: `go run ./cmd/cooking_app` (from `backend/`).
+- Run API: `make backend-run-api` (requires `DATABASE_URL`).
 - Format: `make backend-fmt`
 - Lint: `make backend-lint` (installs `golangci-lint`/`goimports` into `backend/bin/`)
+- Generate sqlc code: `make -C backend sqlc-generate`
 - Tests: `make backend-test`
 - Full check: `make backend-ci`
 
