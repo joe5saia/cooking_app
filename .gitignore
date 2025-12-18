@@ -13,3 +13,7 @@ backend/.air/
 deploy/backups/
 .beads/*
 !.beads/issues.jsonl
+history/ui-baseline/storageState.json
+frontend/playwright/.auth/
+test-results/playwright/
+test-results/

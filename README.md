@@ -3,7 +3,7 @@
 Monorepo containing a Go backend API and a React + TypeScript + Vite frontend, both with linting and formatting wired up.
 
 ## Layout
-- `backend/` — Go module (`github.com/saiaj/cooking_app/backend`) with CLI entry point and linting via `golangci-lint` + `goimports`.
+- `backend/` — Go module (`github.com/saiaj/cooking_app/backend`) with API server + admin CLI, linting via `golangci-lint` + `goimports`.
 - `frontend/` — Vite React+TS app with ESLint + Prettier.
 - `go.work` — workspace tying the backend module to the repo root.
 
@@ -25,8 +25,8 @@ Monorepo containing a Go backend API and a React + TypeScript + Vite frontend, b
 - Stop stack: `make dev-down`
 
 ## Backend (from repo root or `backend/`)
-- Run: `go run ./cmd/cooking_app` (from `backend/`).
 - Run API: `make backend-run-api` (requires `DATABASE_URL`).
+- Run CLI: `go run ./cmd/cli bootstrap-user --username alice --password '...'` (from `backend/`; requires `DATABASE_URL`).
 - Format: `make backend-fmt`
 - Lint: `make backend-lint` (installs `golangci-lint`/`goimports` into `backend/bin/`)
 - Generate sqlc code: `make -C backend sqlc-generate`

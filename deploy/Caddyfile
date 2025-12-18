@@ -1,20 +1,20 @@
 {$COOKING_APP_DOMAIN} {
-  encode gzip zstd
+	encode gzip zstd
 
-  # API
-  handle /api/* {
-    reverse_proxy api:8080
-  }
+	# API
+	handle /api/* {
+		reverse_proxy api:8080
+	}
 
-  # Static frontend
-  handle {
-    root * /srv
-    try_files {path} /index.html
-    file_server
-  }
+	# Static frontend
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
 
-  log {
-    output file /data/access.log
-    format json
-  }
+	log {
+		output file /data/access.log
+		format json
+	}
 }

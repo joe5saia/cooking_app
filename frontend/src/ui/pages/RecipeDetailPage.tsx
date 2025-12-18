@@ -82,7 +82,7 @@ export function RecipeDetailPage() {
         {actionError ? (
           <div role="alert" className={styles.alert}>
             <div className={styles.row}>
-              <div style={{ flex: 1 }}>{actionError}</div>
+              <div className={styles.grow}>{actionError}</div>
               <button
                 className={styles.button}
                 type="button"
@@ -197,7 +197,7 @@ export function RecipeDetailPage() {
               {recipe.notes ? (
                 <div>
                   <strong>Notes:</strong>{' '}
-                  <span style={{ whiteSpace: 'pre-wrap' }}>{recipe.notes}</span>
+                  <span className={styles.preWrap}>{recipe.notes}</span>
                 </div>
               ) : null}
             </div>

@@ -17,3 +17,11 @@ This backend uses `goose` (SQL migrations) and connects using `DATABASE_URL` (Po
 - Roll back 1 migration: `DATABASE_URL=... make -C backend migrate-down`
 - Create a new SQL migration:
   - `make -C backend migrate-create name=add_recipes_table`
+
+## sqlc schema source-of-truth
+
+Migrations are the single source-of-truth for the database schema.
+
+- `backend/internal/db/schema.sql` is generated from the Goose migrations' `Up` sections.
+- Update it after changing migrations: `make -C backend schema-generate`
+- CI enforces drift checks via `make -C backend schema-check` (runs as part of `make backend-ci`).

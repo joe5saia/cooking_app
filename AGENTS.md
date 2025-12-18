@@ -141,65 +141,52 @@ bd close bd-42 --reason "Completed" --json
 5. **Complete**: `bd close <id> --reason "Done"`
 6. **Commit together**: Always commit the `.beads/issues.jsonl` file together with the code changes so issue state stays in sync with code state
 
-### Auto-Sync
+### Using bd Effectively
 
-bd automatically syncs with git:
-- Exports to `.beads/issues.jsonl` after changes (5s debounce)
-- Imports from JSONL when newer (e.g., after `git pull`)
-- No manual export/import needed!
+#### Daily flow (recommended)
 
-### GitHub Copilot Integration
+1. Find work: `bd ready --json` (or `bd list --status open --sort priority`)
+2. De-dupe: `bd search "keywords" --json` before creating anything new
+3. Claim: `bd update <id> --status in_progress --json` (set assignee if you use them)
+4. Keep it accurate: update priority/status as reality changes (and add comments when helpful)
+5. Finish: `bd close <id> --reason "<what changed>" --json`
 
-If using GitHub Copilot, also create `.github/copilot-instructions.md` for automatic instruction loading.
-Run `bd onboard` to get the content, or see step 2 of the onboard instructions.
+#### Writing high-signal issues
 
-### MCP Server (Recommended)
+- Title: start with a verb and include scope when helpful (e.g. `Backend: ...`, `Frontend: ...`, `Deploy: ...`).
+- Description: include the “why”, links to files/symbols, and any constraints/assumptions.
+- Acceptance criteria: make it objectively verifiable (commands/tests, observable behavior, specific outputs).
 
-If using Claude or MCP-compatible clients, install the beads MCP server:
+#### Dependencies: when to use what
+
+- `parent-child`: epic → child/subtask hierarchy (use `--parent <epic-id>` when creating).
+- `blocks`: hard ordering (issue B cannot start/finish until A is done).
+- `discovered-from`: track newly found work back to the issue/context that surfaced it.
+- `related`: useful context, but not a blocker.
+
+Examples:
+```bash
+bd create "Epic title" --type epic -p 1 --json
+bd create "Child task" --parent <epic-id> -p 2 --json
+bd dep add <issue-id> <depends-on-id> -t blocks --json
+bd dep add <new-issue-id> <source-issue-id> -t discovered-from --json
+```
+
+#### Navigating and reviewing work
 
 ```bash
-pip install beads-mcp
+bd show <id> --json
+bd dep tree <id>
+bd dep tree <id> --direction=up
+bd epic status --json
 ```
 
-Add to MCP config (e.g., `~/.config/claude/config.json`):
-```json
-{
-  "beads": {
-    "command": "beads-mcp",
-    "args": []
-  }
-}
-```
+#### Troubleshooting / hygiene
 
-Then use `mcp__beads__*` functions instead of CLI commands.
+- If `bd` prints sync/hash warnings, run `bd doctor` (health) or `bd validate` (integrity) and re-run the command.
+- If `.beads/issues.jsonl` conflicts during merges, resolve the conflict and then run `bd clean` to remove temporary merge artifacts.
+- Prefer `--no-daemon` in scripts/CI to avoid daemon-related flakiness.
 
-### Managing AI-Generated Planning Documents
-
-AI assistants often create planning and design documents during development:
-- PLAN.md, IMPLEMENTATION.md, ARCHITECTURE.md
-- DESIGN.md, CODEBASE_SUMMARY.md, INTEGRATION_PLAN.md
-- TESTING_GUIDE.md, TECHNICAL_DESIGN.md, and similar files
-
-**Best Practice: Use a dedicated directory for these ephemeral files**
-
-**Recommended approach:**
-- Create a `history/` directory in the project root
-- Store ALL AI-generated planning/design docs in `history/`
-- Keep the repository root clean and focused on permanent project files
-- Only access `history/` when explicitly asked to review past planning
-
-**Example .gitignore entry (optional):**
-```
-# AI planning documents (ephemeral)
-history/
-```
-
-**Benefits:**
-- ✅ Clean repository root
-- ✅ Clear separation between ephemeral and permanent documentation
-- ✅ Easy to exclude from version control if desired
-- ✅ Preserves planning history for archeological research
-- ✅ Reduces noise when browsing the project
 
 ### CLI Help
 
@@ -219,7 +206,29 @@ For example: `bd create --help` shows `--parent`, `--deps`, `--assignee`, etc.
 - ❌ Do NOT duplicate tracking systems
 - ❌ Do NOT clutter repo root with planning documents
 
-For more details, see README.md.
+## Playwright (UI Exploration)
+
+Use `npx playwright` for quick, ad-hoc navigation and screenshots against a running environment.
+
+### One-time setup
+
+- Install a browser (first time on a machine): `npx -y playwright install chromium`
+
+### Quick screenshots
+
+- Desktop full page: `npx -y playwright screenshot --full-page http://HOST/ /tmp/page.png`
+- Mobile-ish viewport: `npx -y playwright screenshot --viewport-size=390,844 --full-page http://HOST/ /tmp/page-mobile.png`
+
+### Interactive exploration (best for learning layout/selectors)
+
+- Open with DevTools: `npx -y playwright open -b chromium --devtools http://HOST/`
+- Record clicks and generate code: `npx -y playwright codegen -b chromium http://HOST/`
+
+### Current app navigation notes (observed)
+
+- Landing route redirects to `/login` when not authenticated.
+- Login form uses labeled fields `Username` and `Password` and a `Sign in` button (good for `page.getByLabel(...)` / `page.getByRole(...)` selectors).
+- Successful login redirects to `/recipes`; top navigation includes `/recipes`, `/books`, `/tags`, `/settings`.
 
 ## Extra Tools
 - Use npx -y @steipete/oracle -p "Walk through the UI smoke test" --file "src/**/*.ts" to consult the oracle when you need a second opinion from a very senior engineer. 

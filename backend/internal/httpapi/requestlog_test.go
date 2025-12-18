@@ -68,6 +68,8 @@ func TestRequestLogger_LogsBasics(t *testing.T) {
 		SessionCookieName:   "cooking_app_session",
 		SessionTTL:          24 * time.Hour,
 		SessionCookieSecure: false,
+		MaxJSONBodyBytes:    2 << 20,
+		StrictJSON:          true,
 	})
 	if err != nil {
 		t.Fatalf("new app: %v", err)
@@ -160,6 +162,8 @@ func TestRequestLogger_LogsAuthTypeForPAT(t *testing.T) {
 		SessionCookieName:   "cooking_app_session",
 		SessionTTL:          24 * time.Hour,
 		SessionCookieSecure: false,
+		MaxJSONBodyBytes:    2 << 20,
+		StrictJSON:          true,
 	})
 	if err != nil {
 		t.Fatalf("new app: %v", err)
@@ -175,21 +179,11 @@ func TestRequestLogger_LogsAuthTypeForPAT(t *testing.T) {
 	}
 	client := &http.Client{Jar: jar}
 
-	resp, err := client.Post(server.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"joe","password":"pw"}`))
-	if err != nil {
-		t.Fatalf("post login: %v", err)
-	}
-	body := resp.Body
-	t.Cleanup(func() {
-		if closeErr := body.Close(); closeErr != nil {
-			t.Errorf("close body: %v", closeErr)
-		}
-	})
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("login status=%d, want %d", resp.StatusCode, http.StatusNoContent)
-	}
+	csrf := loginAndGetCSRFToken(t, client, server.URL)
 
-	resp, err = client.Post(server.URL+"/api/v1/tokens", "application/json", strings.NewReader(`{"name":"cli"}`))
+	req := newJSONRequest(t, http.MethodPost, server.URL+"/api/v1/tokens", `{"name":"cli"}`)
+	req.Header.Set("X-CSRF-Token", csrf)
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("post tokens: %v", err)
 	}
@@ -212,12 +206,12 @@ func TestRequestLogger_LogsAuthTypeForPAT(t *testing.T) {
 		t.Fatalf("token missing")
 	}
 
-	req, err := http.NewRequest(http.MethodGet, server.URL+"/api/v1/tokens", nil)
+	listReq, err := http.NewRequest(http.MethodGet, server.URL+"/api/v1/tokens", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+secret)
-	resp, err = http.DefaultClient.Do(req)
+	listReq.Header.Set("Authorization", "Bearer "+secret)
+	resp, err = http.DefaultClient.Do(listReq)
 	if err != nil {
 		t.Fatalf("pat list: %v", err)
 	}

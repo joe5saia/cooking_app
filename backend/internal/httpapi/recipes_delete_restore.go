@@ -3,27 +3,19 @@ package httpapi
 import (
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/saiaj/cooking_app/backend/internal/db/sqlc"
-	"github.com/saiaj/cooking_app/backend/internal/httpapi/response"
 )
 
-func (a *App) handleRecipesDelete(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleRecipesDelete(w http.ResponseWriter, r *http.Request) error {
 	info, ok := authInfoFromRequest(r)
 	if !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
-	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
+	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "invalid id", []response.FieldError{
-			{Field: "id", Message: "invalid id"},
-		})
-		return
+		return err
 	}
 
 	userID := pgtype.UUID{Bytes: info.UserID, Valid: true}
@@ -32,32 +24,25 @@ func (a *App) handleRecipesDelete(w http.ResponseWriter, r *http.Request) {
 		UpdatedBy: userID,
 	})
 	if err != nil {
-		a.logger.Error("soft delete recipe failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 	if affected == 0 {
-		a.writeProblem(w, http.StatusNotFound, "not_found", "not found", nil)
-		return
+		return errNotFound()
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
-func (a *App) handleRecipesRestore(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleRecipesRestore(w http.ResponseWriter, r *http.Request) error {
 	info, ok := authInfoFromRequest(r)
 	if !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
-	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
+	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "invalid id", []response.FieldError{
-			{Field: "id", Message: "invalid id"},
-		})
-		return
+		return err
 	}
 
 	userID := pgtype.UUID{Bytes: info.UserID, Valid: true}
@@ -66,14 +51,12 @@ func (a *App) handleRecipesRestore(w http.ResponseWriter, r *http.Request) {
 		UpdatedBy: userID,
 	})
 	if err != nil {
-		a.logger.Error("restore recipe failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 	if affected == 0 {
-		a.writeProblem(w, http.StatusNotFound, "not_found", "not found", nil)
-		return
+		return errNotFound()
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+	return nil
 }

@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -72,6 +71,8 @@ func TestRecipes_Create(t *testing.T) {
 		SessionCookieName:   "cooking_app_session",
 		SessionTTL:          24 * time.Hour,
 		SessionCookieSecure: false,
+		MaxJSONBodyBytes:    2 << 20,
+		StrictJSON:          true,
 	})
 	if err != nil {
 		t.Fatalf("new app: %v", err)
@@ -87,19 +88,7 @@ func TestRecipes_Create(t *testing.T) {
 	}
 	client := &http.Client{Jar: jar}
 
-	resp, err := client.Post(server.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"joe","password":"pw"}`))
-	if err != nil {
-		t.Fatalf("post login: %v", err)
-	}
-	loginBody := resp.Body
-	t.Cleanup(func() {
-		if closeErr := loginBody.Close(); closeErr != nil {
-			t.Errorf("close login body: %v", closeErr)
-		}
-	})
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("login status=%d, want %d", resp.StatusCode, http.StatusNoContent)
-	}
+	csrf := loginAndGetCSRFToken(t, client, server.URL)
 
 	bookID := uuid.UUID(book.ID.Bytes).String()
 	tagID1 := uuid.UUID(tagA.ID.Bytes).String()
@@ -125,7 +114,9 @@ func TestRecipes_Create(t *testing.T) {
   ]
 }`, recipeTitleChickenSoup, bookID, tagID1, tagID2)
 
-	resp, err = client.Post(server.URL+"/api/v1/recipes", "application/json", strings.NewReader(body))
+	req := newJSONRequest(t, http.MethodPost, server.URL+"/api/v1/recipes", body)
+	req.Header.Set("X-CSRF-Token", csrf)
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("post recipes: %v", err)
 	}

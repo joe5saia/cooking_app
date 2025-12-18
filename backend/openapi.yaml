@@ -46,12 +46,15 @@ paths:
           $ref: "#/components/responses/Problem400"
         "401":
           $ref: "#/components/responses/Problem401"
+        "429":
+          $ref: "#/components/responses/Problem429"
         "500":
           $ref: "#/components/responses/Problem500"
   /api/v1/auth/logout:
     post:
       tags: [auth]
       summary: Logout (clears session)
+      description: Clears the session cookie. When authenticated via bearer token, this endpoint does not revoke the token; revoke via `DELETE /api/v1/tokens/{id}`.
       responses:
         "204":
           description: Logged out
@@ -66,6 +69,7 @@ paths:
     get:
       tags: [auth]
       summary: Current user
+      description: Returns the currently authenticated user (session cookie or bearer token).
       responses:
         "200":
           description: OK
@@ -120,6 +124,8 @@ paths:
           $ref: "#/components/responses/Problem400"
         "401":
           $ref: "#/components/responses/Problem401"
+        "429":
+          $ref: "#/components/responses/Problem429"
         "500":
           $ref: "#/components/responses/Problem500"
       security:
@@ -598,6 +604,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Problem"
+    Problem429:
+      description: Too many requests
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Problem"
   securitySchemes:
     cookieAuth:
       type: apiKey
@@ -610,13 +622,34 @@ components:
     Problem:
       type: object
       properties:
-        code: { type: string }
+        code:
+          type: string
+          description: Stable machine-readable error code.
+          enum:
+            - bad_request
+            - request_too_large
+            - validation_error
+            - unauthorized
+            - forbidden
+            - not_found
+            - conflict
+            - rate_limited
+            - method_not_allowed
+            - internal_error
         message: { type: string }
         details:
-          type: object
-          additionalProperties: true
+          description: Present only for `validation_error` as a list of field-level errors.
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldError"
           nullable: true
       required: [code, message]
+    FieldError:
+      type: object
+      properties:
+        field: { type: string }
+        message: { type: string }
+      required: [field, message]
     LoginRequest:
       type: object
       properties:

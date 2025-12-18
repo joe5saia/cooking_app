@@ -1,0 +1,39 @@
+:root {
+  /* Typography */
+  --font-sans:
+    system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  --text-sm: 14px;
+  --text-md: 16px;
+  --text-lg: 20px;
+  --leading-normal: 1.5;
+  --leading-tight: 1.25;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 14px;
+
+  /* Colors */
+  --color-bg: #0b1220;
+  --color-bg-overlay: rgba(11, 18, 32, 0.9);
+  --color-surface-1: rgba(231, 234, 240, 0.04);
+  --color-surface-2: rgba(231, 234, 240, 0.06);
+  --color-border: rgba(231, 234, 240, 0.08);
+  --color-border-strong: rgba(231, 234, 240, 0.12);
+  --color-text: rgba(255, 255, 255, 0.92);
+  --color-muted: rgba(231, 234, 240, 0.72);
+  --color-accent: #a7c7ff;
+  --color-accent-border: rgba(167, 199, 255, 0.4);
+  --color-danger: #ff5c7a;
+  --color-danger-surface: rgba(255, 92, 122, 0.12);
+  --color-danger-border: rgba(255, 92, 122, 0.35);
+  --color-focus: #a7c7ff;
+}

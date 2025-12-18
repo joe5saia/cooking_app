@@ -1,13 +1,10 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -29,17 +26,14 @@ type recipeBookResponse struct {
 	CreatedAt string `json:"created_at"`
 }
 
-func (a *App) handleRecipeBooksList(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleRecipeBooksList(w http.ResponseWriter, r *http.Request) error {
 	if _, ok := authInfoFromRequest(r); !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
 	books, err := a.queries.ListRecipeBooks(r.Context())
 	if err != nil {
-		a.logger.Error("list recipe books failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	out := make([]recipeBookResponse, 0, len(books))
@@ -54,24 +48,22 @@ func (a *App) handleRecipeBooksList(w http.ResponseWriter, r *http.Request) {
 	if err := response.WriteJSON(w, http.StatusOK, out); err != nil {
 		a.logger.Warn("write failed", "err", err, "path", "/api/v1/recipe-books")
 	}
+	return nil
 }
 
-func (a *App) handleRecipeBooksCreate(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleRecipeBooksCreate(w http.ResponseWriter, r *http.Request) error {
 	info, ok := authInfoFromRequest(r)
 	if !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
 	var req createRecipeBookRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "bad_request", "invalid JSON", nil)
-		return
+	if err := a.decodeJSON(w, r, &req); err != nil {
+		return err
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
-		a.writeValidation(w, "name", "name is required")
-		return
+		return errValidationField("name", "name is required")
 	}
 
 	userID := pgtype.UUID{Bytes: info.UserID, Valid: true}
@@ -81,14 +73,10 @@ func (a *App) handleRecipeBooksCreate(w http.ResponseWriter, r *http.Request) {
 		UpdatedBy: userID,
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			a.writeValidation(w, "name", "name already exists")
-			return
+		if isPGUniqueViolation(err) {
+			return errValidationField("name", "name already exists")
 		}
-		a.logger.Error("create recipe book failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	resp := recipeBookResponse{
@@ -100,34 +88,27 @@ func (a *App) handleRecipeBooksCreate(w http.ResponseWriter, r *http.Request) {
 	if err := response.WriteJSON(w, http.StatusOK, resp); err != nil {
 		a.logger.Warn("write failed", "err", err, "path", "/api/v1/recipe-books")
 	}
+	return nil
 }
 
-func (a *App) handleRecipeBooksUpdate(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleRecipeBooksUpdate(w http.ResponseWriter, r *http.Request) error {
 	info, ok := authInfoFromRequest(r)
 	if !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
-	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
+	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "invalid id", []response.FieldError{
-			{Field: "id", Message: "invalid id"},
-		})
-		return
+		return err
 	}
 
 	var req updateRecipeBookRequest
-	decodeErr := json.NewDecoder(r.Body).Decode(&req)
-	if decodeErr != nil {
-		a.writeProblem(w, http.StatusBadRequest, "bad_request", "invalid JSON", nil)
-		return
+	if decodeErr := a.decodeJSON(w, r, &req); decodeErr != nil {
+		return decodeErr
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
-		a.writeValidation(w, "name", "name is required")
-		return
+		return errValidationField("name", "name is required")
 	}
 
 	userID := pgtype.UUID{Bytes: info.UserID, Valid: true}
@@ -138,17 +119,12 @@ func (a *App) handleRecipeBooksUpdate(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			a.writeProblem(w, http.StatusNotFound, "not_found", "not found", nil)
-			return
+			return errNotFound()
 		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			a.writeValidation(w, "name", "name already exists")
-			return
+		if isPGUniqueViolation(err) {
+			return errValidationField("name", "name already exists")
 		}
-		a.logger.Error("update recipe book failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	resp := recipeBookResponse{
@@ -160,38 +136,31 @@ func (a *App) handleRecipeBooksUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := response.WriteJSON(w, http.StatusOK, resp); err != nil {
 		a.logger.Warn("write failed", "err", err, "path", "/api/v1/recipe-books")
 	}
+	return nil
 }
 
-func (a *App) handleRecipeBooksDelete(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleRecipeBooksDelete(w http.ResponseWriter, r *http.Request) error {
 	if _, ok := authInfoFromRequest(r); !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
-	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
+	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "invalid id", []response.FieldError{
-			{Field: "id", Message: "invalid id"},
-		})
-		return
+		return err
 	}
 
 	affected, err := a.queries.DeleteRecipeBookByID(r.Context(), pgtype.UUID{Bytes: id, Valid: true})
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-			a.writeProblem(w, http.StatusConflict, "conflict", "cannot delete recipe book with recipes", nil)
-			return
+			return errConflict("cannot delete recipe book with recipes")
 		}
-		a.logger.Error("delete recipe book failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 	if affected == 0 {
-		a.writeProblem(w, http.StatusNotFound, "not_found", "not found", nil)
-		return
+		return errNotFound()
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+	return nil
 }

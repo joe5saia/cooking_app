@@ -130,8 +130,8 @@ export function UserManagerPage() {
           {users.map((u) => (
             <div className={styles.item} key={u.id}>
               <div>
-                <div style={{ fontWeight: 600 }}>{u.username}</div>
-                <div style={{ opacity: 0.8, fontSize: 12, marginTop: 4 }}>
+                <div className={styles.strong}>{u.username}</div>
+                <div className={styles.meta}>
                   {u.display_name ?? 'No display name'} ·{' '}
                   {u.is_active ? 'Active' : 'Deactivated'}
                 </div>

@@ -1,4 +1,5 @@
-.PHONY: backend-fmt backend-lint backend-test backend-vet backend-tidy backend-ci backend-tools frontend-install frontend-lint frontend-format frontend-format-check frontend-build frontend-ci ci
+.PHONY: backend-fmt backend-lint backend-test backend-vet backend-tidy backend-ci backend-tools frontend-install frontend-lint frontend-format frontend-format-check frontend-build frontend-ci frontend-visual ci
+.PHONY: backend-run-api
 .PHONY: dev-up dev-down dev-logs dev-psql
 
 BACKEND_DIR ?= backend
@@ -25,6 +26,9 @@ backend-ci:
 backend-tools:
 	@$(MAKE) -C $(BACKEND_DIR) tools
 
+backend-run-api:
+	@$(MAKE) -C $(BACKEND_DIR) run-api
+
 frontend-install:
 	@cd $(FRONTEND_DIR) && if [ -n "$$CI" ]; then npm ci; else npm install; fi
 
@@ -42,6 +46,9 @@ frontend-build:
 
 frontend-ci: frontend-install frontend-format-check frontend-lint frontend-build
 	@cd $(FRONTEND_DIR) && npm run test
+
+frontend-visual: frontend-install
+	@cd $(FRONTEND_DIR) && npm run e2e
 
 ci: backend-ci frontend-ci
 

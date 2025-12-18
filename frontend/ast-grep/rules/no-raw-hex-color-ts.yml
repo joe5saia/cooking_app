@@ -1,0 +1,7 @@
+id: no-raw-hex-color-ts
+language: TypeScript
+message: 'Avoid raw hex colors; use tokens (var(--color-...)) or theme constants.'
+severity: error
+rule:
+  kind: string
+  regex: "^['\\\"]#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})['\\\"]$"

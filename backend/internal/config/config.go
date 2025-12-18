@@ -16,6 +16,19 @@ type Config struct {
 	SessionCookieName   string
 	SessionTTL          time.Duration
 	SessionCookieSecure bool
+
+	// HTTP hardening defaults.
+	MaxJSONBodyBytes int64
+	StrictJSON       bool
+	HTTPReadTimeout  time.Duration
+	HTTPWriteTimeout time.Duration
+	HTTPIdleTimeout  time.Duration
+
+	// Rate limiting (process-local).
+	LoginRateLimitPerMin       int
+	LoginRateLimitBurst        int
+	TokenCreateRateLimitPerMin int
+	TokenCreateRateLimitBurst  int
 }
 
 // FromEnv loads the backend configuration from environment variables.
@@ -59,6 +72,85 @@ func FromEnv() (Config, error) {
 			return Config{}, errors.New("SESSION_COOKIE_SECURE must be a boolean")
 		}
 		cfg.SessionCookieSecure = secure
+	}
+
+	cfg.MaxJSONBodyBytes = 2 << 20 // 2 MiB
+	if raw := os.Getenv("MAX_JSON_BODY_BYTES"); raw != "" {
+		v, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || v <= 0 {
+			return Config{}, errors.New("MAX_JSON_BODY_BYTES must be a positive integer")
+		}
+		cfg.MaxJSONBodyBytes = v
+	}
+
+	cfg.StrictJSON = true
+	if raw := os.Getenv("STRICT_JSON"); raw != "" {
+		v, err := strconv.ParseBool(raw)
+		if err != nil {
+			return Config{}, errors.New("STRICT_JSON must be a boolean")
+		}
+		cfg.StrictJSON = v
+	}
+
+	cfg.HTTPReadTimeout = 15 * time.Second
+	if raw := os.Getenv("HTTP_READ_TIMEOUT_SECONDS"); raw != "" {
+		seconds, err := strconv.Atoi(raw)
+		if err != nil || seconds <= 0 {
+			return Config{}, errors.New("HTTP_READ_TIMEOUT_SECONDS must be a positive integer")
+		}
+		cfg.HTTPReadTimeout = time.Duration(seconds) * time.Second
+	}
+
+	cfg.HTTPWriteTimeout = 30 * time.Second
+	if raw := os.Getenv("HTTP_WRITE_TIMEOUT_SECONDS"); raw != "" {
+		seconds, err := strconv.Atoi(raw)
+		if err != nil || seconds <= 0 {
+			return Config{}, errors.New("HTTP_WRITE_TIMEOUT_SECONDS must be a positive integer")
+		}
+		cfg.HTTPWriteTimeout = time.Duration(seconds) * time.Second
+	}
+
+	cfg.HTTPIdleTimeout = 60 * time.Second
+	if raw := os.Getenv("HTTP_IDLE_TIMEOUT_SECONDS"); raw != "" {
+		seconds, err := strconv.Atoi(raw)
+		if err != nil || seconds <= 0 {
+			return Config{}, errors.New("HTTP_IDLE_TIMEOUT_SECONDS must be a positive integer")
+		}
+		cfg.HTTPIdleTimeout = time.Duration(seconds) * time.Second
+	}
+
+	cfg.LoginRateLimitPerMin = 20
+	if raw := os.Getenv("LOGIN_RATE_LIMIT_PER_MIN"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 0 {
+			return Config{}, errors.New("LOGIN_RATE_LIMIT_PER_MIN must be a non-negative integer")
+		}
+		cfg.LoginRateLimitPerMin = v
+	}
+	cfg.LoginRateLimitBurst = 5
+	if raw := os.Getenv("LOGIN_RATE_LIMIT_BURST"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 0 {
+			return Config{}, errors.New("LOGIN_RATE_LIMIT_BURST must be a non-negative integer")
+		}
+		cfg.LoginRateLimitBurst = v
+	}
+
+	cfg.TokenCreateRateLimitPerMin = 60
+	if raw := os.Getenv("TOKEN_CREATE_RATE_LIMIT_PER_MIN"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 0 {
+			return Config{}, errors.New("TOKEN_CREATE_RATE_LIMIT_PER_MIN must be a non-negative integer")
+		}
+		cfg.TokenCreateRateLimitPerMin = v
+	}
+	cfg.TokenCreateRateLimitBurst = 10
+	if raw := os.Getenv("TOKEN_CREATE_RATE_LIMIT_BURST"); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 0 {
+			return Config{}, errors.New("TOKEN_CREATE_RATE_LIMIT_BURST must be a non-negative integer")
+		}
+		cfg.TokenCreateRateLimitBurst = v
 	}
 
 	return cfg, nil

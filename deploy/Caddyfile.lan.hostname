@@ -1,0 +1,39 @@
+# LAN-friendly config that serves HTTPS for a local hostname (router DNS or mDNS).
+#
+# - HTTP stays available on :80 (no automatic HTTP->HTTPS redirect).
+# - HTTPS is served on :443 using Caddy's internal CA (`tls internal`).
+#
+# This avoids IP-based TLS quirks because clients send SNI for hostnames.
+{
+	auto_https disable_redirects
+}
+
+(common) {
+	encode gzip zstd
+
+	# API
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+
+	# Static frontend
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output file /data/access.log
+		format json
+	}
+}
+
+http://:80 {
+	import common
+}
+
+https://{$COOKING_APP_LAN_HOST}:443 {
+	tls internal
+	import common
+}

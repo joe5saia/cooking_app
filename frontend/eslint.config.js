@@ -23,6 +23,12 @@ export default defineConfig([
     },
   },
   {
+    files: ['playwright.config.ts', 'playwright/**/*.ts'],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+  {
     files: ['**/*.{test,spec}.{ts,tsx}'],
     languageOptions: {
       globals: {

@@ -14,8 +14,13 @@ import (
 
 func (a *App) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		info, ok := a.authenticateRequest(w, r)
-		if !ok {
+		info, err := a.authenticateRequest(r)
+		if err != nil {
+			a.writeError(w, r, err)
+			return
+		}
+		if info.AuthType == authTypeSession && isUnsafeMethod(r.Method) && !a.isCSRFValid(r) {
+			a.writeError(w, r, errForbidden("csrf token missing or invalid"))
 			return
 		}
 		*r = *r.WithContext(withAuthInfo(r.Context(), info))
@@ -23,25 +28,16 @@ func (a *App) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func (a *App) authenticateRequest(w http.ResponseWriter, r *http.Request) (authInfo, bool) {
+func (a *App) authenticateRequest(r *http.Request) (authInfo, error) {
 	if token, ok := parseBearerToken(r.Header.Get("Authorization")); ok {
-		info, ok := a.authenticatePAT(w, r, token)
-		if ok {
-			return info, true
-		}
-		return authInfo{}, false
+		return a.authenticatePAT(r, token)
 	}
 
 	if a.readSessionCookie(r) != "" {
-		info, ok := a.authenticateSession(w, r)
-		if ok {
-			return info, true
-		}
-		return authInfo{}, false
+		return a.authenticateSession(r)
 	}
 
-	a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-	return authInfo{}, false
+	return authInfo{}, errUnauthorized("unauthorized")
 }
 
 func parseBearerToken(header string) (string, bool) {
@@ -59,44 +55,41 @@ func parseBearerToken(header string) (string, bool) {
 	return value, true
 }
 
-func (a *App) authenticateSession(w http.ResponseWriter, r *http.Request) (authInfo, bool) {
-	u, ok := a.requireSessionUser(w, r)
-	if !ok || u == nil || !u.UserID.Valid {
-		return authInfo{}, false
+func (a *App) authenticateSession(r *http.Request) (authInfo, error) {
+	u, err := a.requireSessionUser(r)
+	if err != nil {
+		return authInfo{}, err
+	}
+	if u == nil || !u.UserID.Valid {
+		return authInfo{}, errUnauthorized("unauthorized")
 	}
 
 	return authInfo{
 		UserID:   uuid.UUID(u.UserID.Bytes),
 		AuthType: authTypeSession,
-	}, true
+	}, nil
 }
 
-func (a *App) authenticatePAT(w http.ResponseWriter, r *http.Request, token string) (authInfo, bool) {
+func (a *App) authenticatePAT(r *http.Request, token string) (authInfo, error) {
 	if err := pat.ValidateSecret(token); err != nil {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return authInfo{}, false
+		return authInfo{}, errUnauthorized("unauthorized")
 	}
 
 	hash := pat.Hash(token)
 	row, err := a.queries.GetTokenUserByHash(r.Context(), hash)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-			return authInfo{}, false
+			return authInfo{}, errUnauthorized("unauthorized")
 		}
-		a.logger.Error("get token failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return authInfo{}, false
+		return authInfo{}, errInternal(err)
 	}
 
 	if row.TokenExpiresAt.Valid && time.Now().After(row.TokenExpiresAt.Time) {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return authInfo{}, false
+		return authInfo{}, errUnauthorized("unauthorized")
 	}
 
 	if !row.IsActive || !row.UserID.Valid || !row.TokenID.Valid {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return authInfo{}, false
+		return authInfo{}, errUnauthorized("unauthorized")
 	}
 
 	if err := a.queries.TouchTokenLastUsed(r.Context(), sqlc.TouchTokenLastUsedParams{
@@ -109,5 +102,5 @@ func (a *App) authenticatePAT(w http.ResponseWriter, r *http.Request, token stri
 	return authInfo{
 		UserID:   uuid.UUID(row.UserID.Bytes),
 		AuthType: authTypePAT,
-	}, true
+	}, nil
 }

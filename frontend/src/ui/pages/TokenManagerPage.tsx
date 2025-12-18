@@ -90,10 +90,10 @@ export function TokenManagerPage() {
         {createdSecret ? (
           <div className={styles.item} aria-label="New token secret">
             <div>
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>
-                Token created (copy now)
-              </div>
-              <code style={{ wordBreak: 'break-all' }}>{createdSecret}</code>
+              <div className={styles.strong}>Token created (copy now)</div>
+              <code className={`${styles.codeBlock} ${styles.breakAll}`}>
+                {createdSecret}
+              </code>
             </div>
             <div className={styles.actions}>
               <button className={styles.button} type="button" onClick={onCopy}>
@@ -149,8 +149,8 @@ export function TokenManagerPage() {
           {tokens.map((t) => (
             <div className={styles.item} key={t.id}>
               <div>
-                <div style={{ fontWeight: 600 }}>{t.name}</div>
-                <div style={{ opacity: 0.8, fontSize: 12, marginTop: 4 }}>
+                <div className={styles.strong}>{t.name}</div>
+                <div className={styles.meta}>
                   Last used: {t.last_used_at ?? 'never'} · Expires:{' '}
                   {t.expires_at ?? 'never'}
                 </div>

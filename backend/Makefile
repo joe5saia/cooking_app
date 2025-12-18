@@ -12,6 +12,7 @@ MIGRATIONS_DIR := $(CURDIR)/migrations
 GOFILES := $(shell find . -name '*.go' -not -path "./vendor/*" -not -path "./.git/*" -not -path "./bin/*")
 
 .PHONY: fmt lint test vet tidy ci tools clean
+.PHONY: schema-generate schema-check
 .PHONY: run-api
 .PHONY: migrate-create migrate-up migrate-down migrate-status migrate-version
 .PHONY: sqlc-generate sqlc-version
@@ -20,6 +21,12 @@ fmt:
 	@$(GO) fmt ./...
 	@$(MAKE) tools
 	@$(GOIMPORTS) -w $(GOFILES)
+
+schema-generate:
+	@$(GO) run ./cmd/schema-gen -migrations $(MIGRATIONS_DIR) -out $(CURDIR)/internal/db/schema.sql
+
+schema-check:
+	@$(GO) run ./cmd/schema-gen -migrations $(MIGRATIONS_DIR) -out $(CURDIR)/internal/db/schema.sql -check
 
 lint:
 	@$(MAKE) tools
@@ -41,7 +48,7 @@ tools:
 	@GOBIN=$(BIN_DIR) $(GO) install github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
 	@GOBIN=$(BIN_DIR) $(GO) install github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
 
-ci: fmt vet lint test
+ci: schema-check fmt vet lint test
 
 run-api:
 	@DATABASE_URL=$${DATABASE_URL:?DATABASE_URL is required} HTTP_ADDR=$${HTTP_ADDR:-:8080} LOG_LEVEL=$${LOG_LEVEL:-info} $(GO) run ./cmd/api

@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: deploy/deploy.sh [--host HOST] [--ip IP] [--remote-dir DIR] [--reset-volumes]
+Usage: deploy/deploy.sh [--host HOST] [--ip IP] [--remote-dir DIR] [--lan-https] [--lan-https-redirect] [--reset-volumes]
 
 Deploys the production stack in deploy/ to an Ubuntu server over SSH and verifies it via curl.
 
@@ -15,7 +15,10 @@ Defaults:
 Environment variables (optional):
   POSTGRES_PASSWORD       Postgres password (auto-generated if unset)
   COOKING_APP_DOMAIN      Caddy site address (default :80 for HTTP on LAN)
-  SESSION_COOKIE_SECURE   true/false (default: false when COOKING_APP_DOMAIN=:80, otherwise true)
+  COOKING_APP_CADDYFILE   Caddyfile to use (default: Caddyfile; LAN HTTPS: Caddyfile.lan)
+  COOKING_APP_LAN_IP      Server LAN IP for `Caddyfile.lan` (default: --ip)
+  COOKING_APP_LAN_CADDYFILE  Caddyfile for LAN compose (default: Caddyfile.lan)
+  SESSION_COOKIE_SECURE   true/false (default: true with --lan-https; otherwise false when COOKING_APP_DOMAIN=:80, else true)
   LOG_LEVEL               Backend log level (default info)
 EOF
 }
@@ -25,6 +28,8 @@ SERVER_IP="${SERVER_IP:-192.168.88.15}"
 REMOTE_DIR="${REMOTE_DIR:-~/apps/cooking_app}"
 SSH_OPTS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new)
 RESET_VOLUMES=0
+LAN_HTTPS=0
+LAN_HTTPS_REDIRECT=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -39,6 +44,15 @@ while [[ $# -gt 0 ]]; do
     --remote-dir)
       REMOTE_DIR="${2:?missing value for --remote-dir}"
       shift 2
+      ;;
+    --lan-https)
+      LAN_HTTPS=1
+      shift 1
+      ;;
+    --lan-https-redirect)
+      LAN_HTTPS=1
+      LAN_HTTPS_REDIRECT=1
+      shift 1
       ;;
     --reset-volumes)
       RESET_VOLUMES=1
@@ -115,9 +129,23 @@ if [[ -z "$POSTGRES_PASSWORD" ]]; then
 fi
 
 COOKING_APP_DOMAIN="${COOKING_APP_DOMAIN:-:80}"
+COOKING_APP_CADDYFILE="${COOKING_APP_CADDYFILE:-Caddyfile}"
+COOKING_APP_LAN_IP="${COOKING_APP_LAN_IP:-$SERVER_IP}"
+COOKING_APP_LAN_CADDYFILE="${COOKING_APP_LAN_CADDYFILE:-Caddyfile.lan}"
+
+compose_file_flags="-f deploy/compose.yaml"
+if [[ "$LAN_HTTPS" -eq 1 ]]; then
+  compose_file_flags="-f deploy/compose.lan.yaml"
+fi
+
+if [[ "$LAN_HTTPS_REDIRECT" -eq 1 ]]; then
+  COOKING_APP_LAN_CADDYFILE="Caddyfile.lan.redirect"
+fi
 SESSION_COOKIE_SECURE="${SESSION_COOKIE_SECURE:-}"
 if [[ -z "$SESSION_COOKIE_SECURE" ]]; then
-  if [[ "$COOKING_APP_DOMAIN" == ":80" ]]; then
+  if [[ "$LAN_HTTPS" -eq 1 ]]; then
+    SESSION_COOKIE_SECURE="true"
+  elif [[ "$COOKING_APP_DOMAIN" == ":80" ]]; then
     SESSION_COOKIE_SECURE="false"
   else
     SESSION_COOKIE_SECURE="true"
@@ -147,7 +175,7 @@ if ssh "${SSH_OPTS[@]}" "$SSH_HOST" "command -v rsync >/dev/null 2>&1"; then
 else
   echo "Remote rsync not found; falling back to tar-over-ssh sync." >&2
   echo "Stopping running stack (prevents bind-mount invalidation during sync)..." >&2
-  ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --env-file .env -f deploy/compose.yaml down --remove-orphans" >/dev/null 2>&1 || true
+  ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --env-file .env $compose_file_flags down --remove-orphans" >/dev/null 2>&1 || true
   ssh "${SSH_OPTS[@]}" "$SSH_HOST" "find '$REMOTE_DIR_RESOLVED' -mindepth 1 -maxdepth 1 -exec rm -rf {} +"
   COPYFILE_DISABLE=1 COPY_EXTENDED_ATTRIBUTES_DISABLE=1 tar -czf - \
     --exclude='.git' \
@@ -166,6 +194,9 @@ echo "Writing remote env file..." >&2
 ssh "${SSH_OPTS[@]}" "$SSH_HOST" "umask 077 && cat >'$REMOTE_DIR_RESOLVED/.env' <<'EOF'
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 COOKING_APP_DOMAIN=$COOKING_APP_DOMAIN
+COOKING_APP_CADDYFILE=$COOKING_APP_CADDYFILE
+COOKING_APP_LAN_IP=$COOKING_APP_LAN_IP
+COOKING_APP_LAN_CADDYFILE=$COOKING_APP_LAN_CADDYFILE
 SESSION_COOKIE_SECURE=$SESSION_COOKIE_SECURE
 LOG_LEVEL=$LOG_LEVEL
 EOF"
@@ -173,17 +204,17 @@ EOF"
 echo "Starting/Updating containers (docker compose)..." >&2
 if [[ "$RESET_VOLUMES" -eq 1 ]]; then
   echo "Resetting docker compose volumes (destructive)..." >&2
-  ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --env-file .env -f deploy/compose.yaml down -v --remove-orphans" || true
+  ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --env-file .env $compose_file_flags down -v --remove-orphans" || true
 fi
 
 echo "Starting database..." >&2
-ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --env-file .env -f deploy/compose.yaml up -d --build db"
+ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --env-file .env $compose_file_flags up -d --build db"
 
 echo "Running migrations (goose)..." >&2
 ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && set -a && . ./.env && set +a && for i in {1..30}; do docker run --rm --network deploy_internal -v \"\$PWD/backend:/src\" -w /src golang:1.25 go run github.com/pressly/goose/v3/cmd/goose@v3.26.0 -dir ./migrations postgres \"postgres://cooking_app:\${POSTGRES_PASSWORD}@db:5432/cooking_app?sslmode=disable\" up && exit 0; sleep 2; done; exit 1"
 
 echo "Starting API + Caddy..." >&2
-ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --env-file .env -f deploy/compose.yaml up -d --build api caddy"
+ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --env-file .env $compose_file_flags up -d --build api caddy"
 
 echo "Waiting for HTTP health endpoint..." >&2
 health_url="http://$SERVER_IP/api/v1/healthz"
@@ -198,8 +229,8 @@ done
 
 if [[ "$healthy" -ne 1 ]]; then
   echo "Health check failed: $health_url" >&2
-  ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --env-file .env -f deploy/compose.yaml ps -a" >&2 || true
-  ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --env-file .env -f deploy/compose.yaml logs --tail=200 db api caddy" >&2 || true
+  ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --env-file .env $compose_file_flags ps -a" >&2 || true
+  ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --env-file .env $compose_file_flags logs --tail=200 db api caddy" >&2 || true
   exit 1
 fi
 
@@ -209,3 +240,6 @@ echo >&2
 
 echo "Deployed." >&2
 echo "Visit: http://$SERVER_IP/"
+if [[ "$LAN_HTTPS" -eq 1 ]]; then
+  echo "Visit (requires trusting Caddy CA): https://$SERVER_IP/"
+fi

@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cooking_app
+      POSTGRES_USER: cooking_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    networks: [internal]
+
+  api:
+    build:
+      context: ../backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://cooking_app:${POSTGRES_PASSWORD}@db:5432/cooking_app?sslmode=disable
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      HTTP_ADDR: :8080
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-true}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on: [db]
+    networks: [internal]
+
+  # Runs on the host network to make `https://<lan-ip>/` work reliably:
+  # many clients (including curl) omit SNI for IP-based URLs, so Caddy must be
+  # able to select the certificate based on the destination IP.
+  caddy:
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
+      args:
+        # Set to your DNS provider module (example for Cloudflare shown).
+        # See: https://caddyserver.com/docs/caddyfile/directives/tls#dns
+        CADDY_DNS_MODULE: ${CADDY_DNS_MODULE:-github.com/caddy-dns/cloudflare}
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      COOKING_APP_LAN_IP: ${COOKING_APP_LAN_IP:?COOKING_APP_LAN_IP is required}
+      COOKING_APP_LAN_CADDYFILE: ${COOKING_APP_LAN_CADDYFILE:-Caddyfile.lan}
+    volumes:
+      - ./${COOKING_APP_LAN_CADDYFILE:-Caddyfile.lan}:/etc/caddy/Caddyfile:ro
+      # Provide a production build of the frontend at ../frontend/dist
+      - ../frontend/dist:/srv:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api]
+
+networks:
+  internal:
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

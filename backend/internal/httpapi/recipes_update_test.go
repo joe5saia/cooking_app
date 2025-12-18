@@ -82,6 +82,8 @@ func TestRecipes_Update(t *testing.T) {
 		SessionCookieName:   "cooking_app_session",
 		SessionTTL:          24 * time.Hour,
 		SessionCookieSecure: false,
+		MaxJSONBodyBytes:    2 << 20,
+		StrictJSON:          true,
 	})
 	if appErr != nil {
 		t.Fatalf("new app: %v", appErr)
@@ -97,19 +99,7 @@ func TestRecipes_Update(t *testing.T) {
 	}
 	client := &http.Client{Jar: jar}
 
-	loginResp, loginErr := client.Post(server.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"joe","password":"pw"}`))
-	if loginErr != nil {
-		t.Fatalf("post login: %v", loginErr)
-	}
-	loginBody := loginResp.Body
-	t.Cleanup(func() {
-		if closeErr := loginBody.Close(); closeErr != nil {
-			t.Errorf("close login body: %v", closeErr)
-		}
-	})
-	if loginResp.StatusCode != http.StatusNoContent {
-		t.Fatalf("login status=%d, want %d", loginResp.StatusCode, http.StatusNoContent)
-	}
+	csrf := loginAndGetCSRFToken(t, client, server.URL)
 
 	bookAID := uuid.UUID(bookA.ID.Bytes).String()
 	bookBID := uuid.UUID(bookB.ID.Bytes).String()
@@ -129,7 +119,9 @@ func TestRecipes_Update(t *testing.T) {
   "steps":[{"step_number":1,"instruction":"Boil."}]
 }`, recipeTitleChickenSoup, bookAID, tagSoupID)
 
-	resp, err := client.Post(server.URL+"/api/v1/recipes", "application/json", strings.NewReader(createBody))
+	req := newJSONRequest(t, http.MethodPost, server.URL+"/api/v1/recipes", createBody)
+	req.Header.Set("X-CSRF-Token", csrf)
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("post create: %v", err)
 	}
@@ -169,6 +161,7 @@ func TestRecipes_Update(t *testing.T) {
 		t.Fatalf("new update req: %v", reqErr)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-CSRF-Token", csrf)
 
 	resp, err = client.Do(req)
 	if err != nil {
@@ -210,6 +203,7 @@ func TestRecipes_Update(t *testing.T) {
 	if reqErr != nil {
 		t.Fatalf("new delete req: %v", reqErr)
 	}
+	deleteReq.Header.Set("X-CSRF-Token", csrf)
 	resp, err = client.Do(deleteReq)
 	if err != nil {
 		t.Fatalf("do delete: %v", err)
@@ -229,6 +223,7 @@ func TestRecipes_Update(t *testing.T) {
 		t.Fatalf("new update req: %v", reqErr)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-CSRF-Token", csrf)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("do update deleted: %v", err)

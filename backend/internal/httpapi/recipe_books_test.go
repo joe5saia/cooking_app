@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -45,6 +44,8 @@ func TestRecipeBooks_CRUD_DeleteConflictWhenRecipesExist(t *testing.T) {
 		SessionCookieName:   "cooking_app_session",
 		SessionTTL:          24 * time.Hour,
 		SessionCookieSecure: false,
+		MaxJSONBodyBytes:    2 << 20,
+		StrictJSON:          true,
 	})
 	if err != nil {
 		t.Fatalf("new app: %v", err)
@@ -74,21 +75,11 @@ func TestRecipeBooks_CRUD_DeleteConflictWhenRecipesExist(t *testing.T) {
 	}
 	client := &http.Client{Jar: jar}
 
-	resp, err = client.Post(server.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"joe","password":"pw"}`))
-	if err != nil {
-		t.Fatalf("post login: %v", err)
-	}
-	loginBody := resp.Body
-	t.Cleanup(func() {
-		if closeErr := loginBody.Close(); closeErr != nil {
-			t.Errorf("close body: %v", closeErr)
-		}
-	})
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("login status=%d, want %d", resp.StatusCode, http.StatusNoContent)
-	}
+	csrf := loginAndGetCSRFToken(t, client, server.URL)
 
-	resp, err = client.Post(server.URL+"/api/v1/recipe-books", "application/json", strings.NewReader(`{"name":"Main"}`))
+	req := newJSONRequest(t, http.MethodPost, server.URL+"/api/v1/recipe-books", `{"name":"Main"}`)
+	req.Header.Set("X-CSRF-Token", csrf)
+	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("post recipe books: %v", err)
 	}
@@ -110,11 +101,8 @@ func TestRecipeBooks_CRUD_DeleteConflictWhenRecipesExist(t *testing.T) {
 		t.Fatalf("id missing or not string: %v", created["id"])
 	}
 
-	req, err := http.NewRequest(http.MethodPut, server.URL+"/api/v1/recipe-books/"+id, strings.NewReader(`{"name":"Primary"}`))
-	if err != nil {
-		t.Fatalf("new update request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
+	req = newJSONRequest(t, http.MethodPut, server.URL+"/api/v1/recipe-books/"+id, `{"name":"Primary"}`)
+	req.Header.Set("X-CSRF-Token", csrf)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("update recipe book: %v", err)
@@ -133,6 +121,7 @@ func TestRecipeBooks_CRUD_DeleteConflictWhenRecipesExist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new delete request: %v", err)
 	}
+	req.Header.Set("X-CSRF-Token", csrf)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("delete recipe book: %v", err)
@@ -147,7 +136,9 @@ func TestRecipeBooks_CRUD_DeleteConflictWhenRecipesExist(t *testing.T) {
 		t.Fatalf("delete status=%d, want %d", resp.StatusCode, http.StatusNoContent)
 	}
 
-	resp, err = client.Post(server.URL+"/api/v1/recipe-books", "application/json", strings.NewReader(`{"name":"WithRecipes"}`))
+	req = newJSONRequest(t, http.MethodPost, server.URL+"/api/v1/recipe-books", `{"name":"WithRecipes"}`)
+	req.Header.Set("X-CSRF-Token", csrf)
+	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("post recipe books 2: %v", err)
 	}
@@ -207,6 +198,7 @@ INSERT INTO recipes (
 	if err != nil {
 		t.Fatalf("new delete2 request: %v", err)
 	}
+	req.Header.Set("X-CSRF-Token", csrf)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("delete2 recipe book: %v", err)

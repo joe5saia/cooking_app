@@ -38,9 +38,15 @@ services:
       # DNS provider credentials for the DNS-01 challenge vary by provider.
       # Example (Cloudflare): CLOUDFLARE_API_TOKEN=...
       # See: https://caddyserver.com/docs/caddyfile/directives/tls#dns
-      COOKING_APP_DOMAIN: ${COOKING_APP_DOMAIN:?COOKING_APP_DOMAIN is required}
+      # Used by deploy/Caddyfile. For LAN HTTPS (deploy/Caddyfile.lan), this may be left unset.
+      COOKING_APP_DOMAIN: ${COOKING_APP_DOMAIN:-:80}
+      # Used by deploy/Caddyfile.lan.
+      COOKING_APP_LAN_IP: ${COOKING_APP_LAN_IP:-}
+      # Used by deploy/Caddyfile.lan.hostname.
+      COOKING_APP_LAN_HOST: ${COOKING_APP_LAN_HOST:-}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Select the Caddyfile via COOKING_APP_CADDYFILE (defaults to deploy/Caddyfile).
+      - ./${COOKING_APP_CADDYFILE:-Caddyfile}:/etc/caddy/Caddyfile:ro
       # Provide a production build of the frontend at ../frontend/dist
       - ../frontend/dist:/srv:ro
       - caddy_data:/data

@@ -363,7 +363,7 @@ export function RecipeEditorPage({ mode }: RecipeEditorPageProps) {
 
             <div>
               <div className={styles.row}>
-                <h3 style={{ margin: 0 }}>Ingredients</h3>
+                <h3 className={styles.heading}>Ingredients</h3>
                 <button
                   className={styles.button}
                   type="button"
@@ -449,7 +449,7 @@ export function RecipeEditorPage({ mode }: RecipeEditorPageProps) {
 
             <div>
               <div className={styles.row}>
-                <h3 style={{ margin: 0 }}>Steps</h3>
+                <h3 className={styles.heading}>Steps</h3>
                 <button
                   className={styles.button}
                   type="button"

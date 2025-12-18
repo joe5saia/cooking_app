@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom'
 
 import { Page } from './Page'
+import styles from './SettingsPage.module.css'
 
 export function SettingsPage() {
   const location = useLocation()
@@ -8,7 +9,7 @@ export function SettingsPage() {
   return (
     <Page title="Settings">
       <p>Manage access tokens and users.</p>
-      <p style={{ opacity: 0.7, fontSize: 12 }}>Path: {location.pathname}</p>
+      <p className={styles.path}>Path: {location.pathname}</p>
       <ul>
         <li>
           <Link to="/settings/tokens">Tokens</Link>

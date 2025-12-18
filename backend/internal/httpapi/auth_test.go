@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -15,9 +16,22 @@ import (
 	"github.com/saiaj/cooking_app/backend/internal/config"
 	"github.com/saiaj/cooking_app/backend/internal/db/sqlc"
 	"github.com/saiaj/cooking_app/backend/internal/httpapi"
+	"github.com/saiaj/cooking_app/backend/internal/httpapi/response"
 	"github.com/saiaj/cooking_app/backend/internal/logging"
 	"github.com/saiaj/cooking_app/backend/internal/testutil/pgtest"
 )
+
+func decodeProblem(t *testing.T, body io.Reader) response.Problem {
+	t.Helper()
+
+	var p response.Problem
+	if err := json.NewDecoder(body).Decode(&p); err != nil {
+		t.Fatalf("decode problem: %v", err)
+	}
+	return p
+}
+
+const problemCodeUnauthorized = "unauthorized"
 
 func TestAuth_LoginSetsCookieAttributes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -43,6 +57,8 @@ func TestAuth_LoginSetsCookieAttributes(t *testing.T) {
 		SessionCookieName:   "cooking_app_session",
 		SessionTTL:          24 * time.Hour,
 		SessionCookieSecure: true,
+		MaxJSONBodyBytes:    2 << 20,
+		StrictJSON:          true,
 	})
 	if err != nil {
 		t.Fatalf("new app: %v", err)
@@ -116,6 +132,8 @@ func TestAuth_LoginLogoutMeFlow(t *testing.T) {
 		SessionCookieName:   "cooking_app_session",
 		SessionTTL:          24 * time.Hour,
 		SessionCookieSecure: false,
+		MaxJSONBodyBytes:    2 << 20,
+		StrictJSON:          true,
 	})
 	if err != nil {
 		t.Fatalf("new app: %v", err)
@@ -131,20 +149,9 @@ func TestAuth_LoginLogoutMeFlow(t *testing.T) {
 	}
 	client := &http.Client{Jar: jar}
 
-	resp, err := client.Post(server.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"joe","password":"pw"}`))
-	if err != nil {
-		t.Fatalf("post login: %v", err)
-	}
-	t.Cleanup(func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			t.Errorf("close body: %v", closeErr)
-		}
-	})
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("login status=%d, want %d", resp.StatusCode, http.StatusNoContent)
-	}
+	csrf := loginAndGetCSRFToken(t, client, server.URL)
 
-	resp, err = client.Get(server.URL + "/api/v1/auth/me")
+	resp, err := client.Get(server.URL + "/api/v1/auth/me")
 	if err != nil {
 		t.Fatalf("get me: %v", err)
 	}
@@ -157,7 +164,12 @@ func TestAuth_LoginLogoutMeFlow(t *testing.T) {
 		t.Fatalf("me status=%d, want %d", resp.StatusCode, http.StatusOK)
 	}
 
-	resp, err = client.Post(server.URL+"/api/v1/auth/logout", "application/json", nil)
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/api/v1/auth/logout", nil)
+	if err != nil {
+		t.Fatalf("new logout request: %v", err)
+	}
+	req.Header.Set("X-CSRF-Token", csrf)
+	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("post logout: %v", err)
 	}
@@ -181,5 +193,100 @@ func TestAuth_LoginLogoutMeFlow(t *testing.T) {
 	})
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("me-after-logout status=%d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+	problem := decodeProblem(t, resp.Body)
+	if problem.Code != problemCodeUnauthorized {
+		t.Fatalf("code=%q, want %q", problem.Code, problemCodeUnauthorized)
+	}
+	if problem.Message == "" {
+		t.Fatalf("expected non-empty message")
+	}
+}
+
+func TestAuth_MeRequiresAuth(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	t.Cleanup(cancel)
+
+	postgres := pgtest.Start(ctx, t)
+	db := postgres.OpenSQL(ctx, t)
+	postgres.MigrateUp(ctx, t, db)
+
+	app, err := httpapi.New(ctx, logging.New("error"), config.Config{
+		DatabaseURL:         postgres.DatabaseURL,
+		LogLevel:            "error",
+		SessionCookieName:   "cooking_app_session",
+		SessionTTL:          24 * time.Hour,
+		SessionCookieSecure: false,
+		MaxJSONBodyBytes:    2 << 20,
+		StrictJSON:          true,
+	})
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	t.Cleanup(app.Close)
+
+	server := httptest.NewServer(app.Handler())
+	t.Cleanup(server.Close)
+
+	resp, err := http.Get(server.URL + "/api/v1/auth/me")
+	if err != nil {
+		t.Fatalf("get me: %v", err)
+	}
+	t.Cleanup(func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			t.Errorf("close body: %v", closeErr)
+		}
+	})
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status=%d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+	problem := decodeProblem(t, resp.Body)
+	if problem.Code != problemCodeUnauthorized {
+		t.Fatalf("code=%q, want %q", problem.Code, problemCodeUnauthorized)
+	}
+}
+
+func TestAuth_LogoutRequiresAuth(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	t.Cleanup(cancel)
+
+	postgres := pgtest.Start(ctx, t)
+	db := postgres.OpenSQL(ctx, t)
+	postgres.MigrateUp(ctx, t, db)
+
+	app, err := httpapi.New(ctx, logging.New("error"), config.Config{
+		DatabaseURL:         postgres.DatabaseURL,
+		LogLevel:            "error",
+		SessionCookieName:   "cooking_app_session",
+		SessionTTL:          24 * time.Hour,
+		SessionCookieSecure: false,
+		MaxJSONBodyBytes:    2 << 20,
+		StrictJSON:          true,
+	})
+	if err != nil {
+		t.Fatalf("new app: %v", err)
+	}
+	t.Cleanup(app.Close)
+
+	server := httptest.NewServer(app.Handler())
+	t.Cleanup(server.Close)
+
+	resp, err := http.Post(server.URL+"/api/v1/auth/logout", "application/json", nil)
+	if err != nil {
+		t.Fatalf("post logout: %v", err)
+	}
+	t.Cleanup(func() {
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			t.Errorf("close body: %v", closeErr)
+		}
+	})
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status=%d, want %d", resp.StatusCode, http.StatusUnauthorized)
+	}
+	problem := decodeProblem(t, resp.Body)
+	if problem.Code != problemCodeUnauthorized {
+		t.Fatalf("code=%q, want %q", problem.Code, problemCodeUnauthorized)
 	}
 }

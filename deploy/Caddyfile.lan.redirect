@@ -1,0 +1,39 @@
+# LAN-friendly config that redirects HTTP -> HTTPS.
+#
+# - HTTP redirects to HTTPS.
+# - HTTPS is served on :443 using Caddy's internal CA (`tls internal`).
+#
+# Intended for LAN deployments without a public domain.
+{
+	auto_https disable_redirects
+}
+
+(common) {
+	encode gzip zstd
+
+	# API
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	# Static frontend
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output file /data/access.log
+		format json
+	}
+}
+
+http://:80 {
+	redir https://{host}{uri} permanent
+}
+
+https://{$COOKING_APP_LAN_IP}:443 {
+	tls internal
+	import common
+}

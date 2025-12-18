@@ -22,6 +22,14 @@ type App struct {
 	sessionCookieName   string
 	sessionTTL          time.Duration
 	sessionCookieSecure bool
+	csrfCookieName      string
+	csrfHeaderName      string
+
+	loginLimiter       *rateLimiter
+	tokenCreateLimiter *rateLimiter
+
+	maxJSONBodyBytes int64
+	strictJSON       bool
 }
 
 // New wires the API app (router + DB pool).
@@ -52,6 +60,12 @@ func New(ctx context.Context, logger *slog.Logger, cfg config.Config) (*App, err
 		sessionCookieName:   cfg.SessionCookieName,
 		sessionTTL:          cfg.SessionTTL,
 		sessionCookieSecure: cfg.SessionCookieSecure,
+		csrfCookieName:      cfg.SessionCookieName + "_csrf",
+		csrfHeaderName:      "X-CSRF-Token",
+		loginLimiter:        newRateLimiter(cfg.LoginRateLimitPerMin, cfg.LoginRateLimitBurst),
+		tokenCreateLimiter:  newRateLimiter(cfg.TokenCreateRateLimitPerMin, cfg.TokenCreateRateLimitBurst),
+		maxJSONBodyBytes:    cfg.MaxJSONBodyBytes,
+		strictJSON:          cfg.StrictJSON,
 	}
 	app.mux = routes(app)
 

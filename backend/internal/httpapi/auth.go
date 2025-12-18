@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -31,66 +30,68 @@ type meResponse struct {
 	DisplayName *string `json:"display_name"`
 }
 
-func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	var req loginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "bad_request", "invalid JSON", nil)
-		return
+	if err := a.decodeJSON(w, r, &req); err != nil {
+		return err
 	}
 
 	username, err := users.NormalizeUsername(req.Username)
 	if err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", err.Error(), []response.FieldError{
-			{Field: "username", Message: err.Error()},
-		})
-		return
+		a.audit(r, "auth.login.failed", "reason", "invalid_username")
+		return errValidationField("username", err.Error())
 	}
 	if strings.TrimSpace(req.Password) == "" {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "password is required", []response.FieldError{
-			{Field: "password", Message: "password is required"},
-		})
-		return
+		a.audit(r, "auth.login.failed", "reason", "missing_password", "username", username)
+		return errValidationField("password", "password is required")
 	}
 
 	user, err := a.queries.GetUserByUsername(r.Context(), username)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "invalid credentials", nil)
-			return
+			a.audit(r, "auth.login.failed", "reason", "invalid_credentials", "username", username)
+			return errUnauthorized("invalid credentials")
 		}
-		a.logger.Error("get user failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		a.audit(r, "auth.login.error", "username", username)
+		return errInternal(err)
 	}
 
 	if !user.IsActive {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "invalid credentials", nil)
-		return
+		a.audit(r, "auth.login.failed", "reason", "invalid_credentials", "username", username)
+		return errUnauthorized("invalid credentials")
 	}
 
 	ok, err := password.Verify(req.Password, user.PasswordHash)
 	if err != nil {
 		a.logger.Error("password verify error", "err", err)
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "invalid credentials", nil)
-		return
+		a.audit(r, "auth.login.error", "username", username, "user_id", uuidString(user.ID))
+		return errUnauthorized("invalid credentials")
 	}
 	if !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "invalid credentials", nil)
-		return
+		a.audit(r, "auth.login.failed", "reason", "invalid_credentials", "username", username)
+		return errUnauthorized("invalid credentials")
 	}
 
 	sessionToken, tokenHash, err := newSessionToken()
 	if err != nil {
-		a.logger.Error("session token generation failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		a.audit(r, "auth.login.error", "username", username, "user_id", uuidString(user.ID))
+		return errInternal(err)
 	}
 
 	expiresAt := time.Now().Add(a.sessionTTL)
-	if err := a.createSession(r.Context(), user.ID, tokenHash, expiresAt); err != nil {
-		a.logger.Error("create session failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+	if createErr := a.createSession(r.Context(), user.ID, tokenHash, expiresAt); createErr != nil {
+		a.audit(r, "auth.login.error", "username", username, "user_id", uuidString(user.ID))
+		return errInternal(createErr)
+	}
+
+	csrfToken, err := a.newCSRFToken()
+	if err != nil {
+		a.audit(r, "auth.login.error", "username", username, "user_id", uuidString(user.ID))
+		return errInternal(err)
+	}
+	if setCSRFCookieErr := a.setCSRFCookie(w, csrfToken, expiresAt); setCSRFCookieErr != nil {
+		a.audit(r, "auth.login.error", "username", username, "user_id", uuidString(user.ID))
+		return errInternal(setCSRFCookieErr)
 	}
 
 	http.SetCookie(w, &http.Cookie{
@@ -102,17 +103,25 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		Expires:  expiresAt,
 	})
+	a.audit(r, "auth.login.succeeded", "username", username, "user_id", uuidString(user.ID))
 	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
-func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) error {
+	hadSessionCookie := false
+	sessionDeleteFailed := false
+
 	if token := a.readSessionCookie(r); token != "" {
+		hadSessionCookie = true
 		tokenHash := hashToken(token)
 		if err := a.queries.DeleteSessionByTokenHash(r.Context(), tokenHash); err != nil {
+			sessionDeleteFailed = true
 			a.logger.Warn("delete session failed", "err", err)
 		}
 	}
 
+	a.clearCSRFCookie(w)
 	http.SetCookie(w, &http.Cookie{
 		Name:     a.sessionCookieName,
 		Value:    "",
@@ -123,54 +132,42 @@ func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0),
 	})
+	a.audit(r, "auth.logout", "session_cookie_present", hadSessionCookie, "session_delete_failed", sessionDeleteFailed)
 	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
-func (a *App) handleMe(w http.ResponseWriter, r *http.Request) {
-	token := a.readSessionCookie(r)
-	if token == "" {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+func (a *App) handleMe(w http.ResponseWriter, r *http.Request) error {
+	info, ok := authInfoFromRequest(r)
+	if !ok {
+		return errUnauthorized("unauthorized")
 	}
 
-	tokenHash := hashToken(token)
-
-	row, err := a.queries.GetSessionUserByTokenHash(r.Context(), tokenHash)
+	user, err := a.queries.GetUserByID(r.Context(), pgtype.UUID{Bytes: info.UserID, Valid: true})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-			return
+			return errUnauthorized("unauthorized")
 		}
-		a.logger.Error("get session failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
-	if !row.SessionExpiresAt.Valid || time.Now().After(row.SessionExpiresAt.Time) {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
-	}
-	if !row.IsActive {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
-	}
-	if !row.UserID.Valid {
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+	if !user.IsActive {
+		return errUnauthorized("unauthorized")
 	}
 
 	var displayName *string
-	if row.DisplayName.Valid {
-		displayName = &row.DisplayName.String
+	if user.DisplayName.Valid {
+		displayName = &user.DisplayName.String
 	}
 
 	if err := response.WriteJSON(w, http.StatusOK, meResponse{
-		ID:          uuid.UUID(row.UserID.Bytes).String(),
-		Username:    row.Username,
+		ID:          uuid.UUID(user.ID.Bytes).String(),
+		Username:    user.Username,
 		DisplayName: displayName,
 	}); err != nil {
 		a.logger.Warn("write failed", "err", err, "path", "/api/v1/auth/me")
 	}
+	return nil
 }
 
 func (a *App) readSessionCookie(r *http.Request) string {

@@ -1,12 +1,9 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"net/http"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/saiaj/cooking_app/backend/internal/auth/pat"
 	"github.com/saiaj/cooking_app/backend/internal/db/sqlc"
@@ -18,59 +15,56 @@ type createTokenRequest struct {
 	ExpiresAt string `json:"expires_at"`
 }
 
-func (a *App) handleTokensList(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleTokensList(w http.ResponseWriter, r *http.Request) error {
 	info, ok := authInfoFromRequest(r)
 	if !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
 	userID := pgtype.UUID{Bytes: info.UserID, Valid: true}
 	tokens, err := a.queries.ListTokensByUser(r.Context(), userID)
 	if err != nil {
-		a.logger.Error("list tokens failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	if err := response.WriteJSON(w, http.StatusOK, patListResponse(tokens)); err != nil {
 		a.logger.Warn("write failed", "err", err, "path", "/api/v1/tokens")
 	}
+	return nil
 }
 
-func (a *App) handleTokensCreate(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleTokensCreate(w http.ResponseWriter, r *http.Request) error {
 	info, ok := authInfoFromRequest(r)
 	if !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
+	}
+	if a.tokenCreateLimiter != nil && !a.tokenCreateLimiter.allow(info.UserID.String()) {
+		a.audit(r, "token.create.rate_limited")
+		return errRateLimited()
 	}
 	userID := pgtype.UUID{Bytes: info.UserID, Valid: true}
 
 	var req createTokenRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "bad_request", "invalid JSON", nil)
-		return
+	if err := a.decodeJSON(w, r, &req); err != nil {
+		return err
 	}
 	if req.Name == "" {
-		a.writeValidation(w, "name", "name is required")
-		return
+		return errValidationField("name", "name is required")
 	}
 
 	var expiresAt pgtype.Timestamptz
 	if req.ExpiresAt != "" {
 		parsed, err := time.Parse(time.RFC3339, req.ExpiresAt)
 		if err != nil {
-			a.writeValidation(w, "expires_at", "expires_at must be RFC3339")
-			return
+			return errValidationField("expires_at", "expires_at must be RFC3339")
 		}
 		expiresAt = pgtype.Timestamptz{Time: parsed, Valid: true}
 	}
 
 	secret, hash, err := pat.Generate()
 	if err != nil {
-		a.logger.Error("token generation failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		a.audit(r, "token.create.error")
+		return errInternal(err)
 	}
 
 	row, err := a.queries.CreateToken(r.Context(), sqlc.CreateTokenParams{
@@ -83,13 +77,14 @@ func (a *App) handleTokensCreate(w http.ResponseWriter, r *http.Request) {
 		UpdatedBy:  userID,
 	})
 	if err != nil {
-		a.logger.Error("create token failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		a.audit(r, "token.create.error")
+		return errInternal(err)
 	}
 
+	a.audit(r, "token.created", "token_id", uuidString(row.ID), "name", row.Name, "expires_at", timeString(row.ExpiresAt))
+
 	resp := map[string]any{
-		"id":         uuid.UUID(row.ID.Bytes).String(),
+		"id":         uuidString(row.ID),
 		"name":       row.Name,
 		"token":      secret,
 		"created_at": row.CreatedAt.Time.UTC().Format(time.RFC3339Nano),
@@ -98,23 +93,19 @@ func (a *App) handleTokensCreate(w http.ResponseWriter, r *http.Request) {
 	if err := response.WriteJSON(w, http.StatusOK, resp); err != nil {
 		a.logger.Warn("write failed", "err", err, "path", "/api/v1/tokens")
 	}
+	return nil
 }
 
-func (a *App) handleTokensDelete(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleTokensDelete(w http.ResponseWriter, r *http.Request) error {
 	info, ok := authInfoFromRequest(r)
 	if !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 	userID := pgtype.UUID{Bytes: info.UserID, Valid: true}
 
-	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
+	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "invalid id", []response.FieldError{
-			{Field: "id", Message: "invalid id"},
-		})
-		return
+		return err
 	}
 
 	affected, err := a.queries.DeleteTokenByIDForUser(r.Context(), sqlc.DeleteTokenByIDForUserParams{
@@ -122,14 +113,15 @@ func (a *App) handleTokensDelete(w http.ResponseWriter, r *http.Request) {
 		UserID: userID,
 	})
 	if err != nil {
-		a.logger.Error("delete token failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		a.audit(r, "token.delete.error", "token_id", id.String())
+		return errInternal(err)
 	}
 	if affected == 0 {
-		a.writeProblem(w, http.StatusNotFound, "not_found", "not found", nil)
-		return
+		a.audit(r, "token.delete.not_found", "token_id", id.String())
+		return errNotFound()
 	}
 
+	a.audit(r, "token.deleted", "token_id", id.String())
 	w.WriteHeader(http.StatusNoContent)
+	return nil
 }

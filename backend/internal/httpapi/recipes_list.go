@@ -32,10 +32,9 @@ type recipesListResponse struct {
 	NextCursor *string                  `json:"next_cursor"`
 }
 
-func (a *App) handleRecipesList(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleRecipesList(w http.ResponseWriter, r *http.Request) error {
 	if _, ok := authInfoFromRequest(r); !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
 	qp := r.URL.Query()
@@ -45,10 +44,7 @@ func (a *App) handleRecipesList(w http.ResponseWriter, r *http.Request) {
 	if v := strings.TrimSpace(qp.Get("include_deleted")); v != "" {
 		parsed, err := strconv.ParseBool(v)
 		if err != nil {
-			a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []response.FieldError{
-				{Field: "include_deleted", Message: "invalid boolean"},
-			})
-			return
+			return errValidationField("include_deleted", "invalid boolean")
 		}
 		includeDeleted = parsed
 	}
@@ -58,10 +54,7 @@ func (a *App) handleRecipesList(w http.ResponseWriter, r *http.Request) {
 	if bookIDStr != "" {
 		parsed, err := uuid.Parse(bookIDStr)
 		if err != nil {
-			a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []response.FieldError{
-				{Field: "book_id", Message: "invalid id"},
-			})
-			return
+			return errValidationField("book_id", "invalid id")
 		}
 		bookID = pgtype.UUID{Bytes: parsed, Valid: true}
 	}
@@ -71,10 +64,7 @@ func (a *App) handleRecipesList(w http.ResponseWriter, r *http.Request) {
 	if tagIDStr != "" {
 		parsed, err := uuid.Parse(tagIDStr)
 		if err != nil {
-			a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []response.FieldError{
-				{Field: "tag_id", Message: "invalid id"},
-			})
-			return
+			return errValidationField("tag_id", "invalid id")
 		}
 		tagID = pgtype.UUID{Bytes: parsed, Valid: true}
 	}
@@ -83,10 +73,7 @@ func (a *App) handleRecipesList(w http.ResponseWriter, r *http.Request) {
 	if v := strings.TrimSpace(qp.Get("limit")); v != "" {
 		parsed, err := strconv.Atoi(v)
 		if err != nil || parsed <= 0 {
-			a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []response.FieldError{
-				{Field: "limit", Message: "invalid limit"},
-			})
-			return
+			return errValidationField("limit", "invalid limit")
 		}
 		if parsed > 200 {
 			parsed = 200
@@ -99,10 +86,7 @@ func (a *App) handleRecipesList(w http.ResponseWriter, r *http.Request) {
 	if cursor := strings.TrimSpace(qp.Get("cursor")); cursor != "" {
 		updatedAt, id, ok := parseRecipesCursor(cursor)
 		if !ok {
-			a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []response.FieldError{
-				{Field: "cursor", Message: "invalid cursor"},
-			})
-			return
+			return errValidationField("cursor", "invalid cursor")
 		}
 		cursorUpdatedAt = updatedAt
 		cursorID = id
@@ -118,9 +102,7 @@ func (a *App) handleRecipesList(w http.ResponseWriter, r *http.Request) {
 		PageLimit:       int32(limit + 1), //nolint:gosec // limit is bounded (<=200) above
 	})
 	if err != nil {
-		a.logger.Error("list recipes failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	hasNext := len(rows) > limit
@@ -137,9 +119,7 @@ func (a *App) handleRecipesList(w http.ResponseWriter, r *http.Request) {
 
 		tagRows, err := a.queries.ListRecipeTagsByRecipeIDs(r.Context(), recipeIDs)
 		if err != nil {
-			a.logger.Error("list recipe tags failed", "err", err)
-			a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-			return
+			return errInternal(err)
 		}
 		for _, tr := range tagRows {
 			rid := uuidString(tr.RecipeID)
@@ -183,6 +163,7 @@ func (a *App) handleRecipesList(w http.ResponseWriter, r *http.Request) {
 	if err := response.WriteJSON(w, http.StatusOK, recipesListResponse{Items: items, NextCursor: nextCursor}); err != nil {
 		a.logger.Warn("write failed", "err", err, "path", "/api/v1/recipes")
 	}
+	return nil
 }
 
 func encodeRecipesCursor(updatedAt pgtype.Timestamptz, id pgtype.UUID) string {

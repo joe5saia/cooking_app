@@ -9,7 +9,9 @@ import {
 } from '../../api/recipeBooks'
 import { ApiError } from '../../api/client'
 
-import styles from './CrudList.module.css'
+import { Button, Card, Input } from '../components'
+
+import styles from './BookListPage.module.css'
 import { Page } from './Page'
 
 export function BookListPage() {
@@ -113,20 +115,15 @@ export function BookListPage() {
           className={styles.form}
           aria-label="Create book"
         >
-          <input
-            className={styles.input}
+          <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="New book name"
             disabled={createMutation.isPending}
           />
-          <button
-            className={styles.button}
-            type="submit"
-            disabled={createMutation.isPending}
-          >
+          <Button size="sm" type="submit" disabled={createMutation.isPending}>
             Add
-          </button>
+          </Button>
         </form>
 
         {listQuery.isPending ? <div>Loading…</div> : null}
@@ -138,61 +135,63 @@ export function BookListPage() {
 
         <div className={styles.list} aria-label="Recipe books list">
           {books.map((b) => (
-            <div className={styles.item} key={b.id}>
-              {editingID === b.id ? (
-                <input
-                  className={styles.input}
-                  value={editingName}
-                  onChange={(e) => setEditingName(e.target.value)}
-                  aria-label="Edit name"
-                  disabled={updateMutation.isPending}
-                />
-              ) : (
-                <div>{b.name}</div>
-              )}
+            <Card className={styles.item} padding="sm" key={b.id}>
+              <div className={styles.name}>
+                {editingID === b.id ? (
+                  <Input
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    aria-label="Edit name"
+                    disabled={updateMutation.isPending}
+                  />
+                ) : (
+                  <div>{b.name}</div>
+                )}
+              </div>
 
               <div className={styles.actions}>
                 {editingID === b.id ? (
                   <>
-                    <button
-                      className={styles.button}
+                    <Button
+                      size="sm"
                       type="button"
                       onClick={() => onSaveEdit(b.id)}
                       disabled={updateMutation.isPending}
                     >
                       Save
-                    </button>
-                    <button
-                      className={styles.button}
+                    </Button>
+                    <Button
+                      size="sm"
                       type="button"
                       onClick={cancelEdit}
                       disabled={updateMutation.isPending}
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </>
                 ) : (
                   <>
-                    <button
-                      className={styles.button}
+                    <Button
+                      size="sm"
                       type="button"
                       onClick={() => startEdit(b.id, b.name)}
                       disabled={deleteMutation.isPending}
                     >
                       Rename
-                    </button>
-                    <button
-                      className={`${styles.button} ${styles.buttonDanger}`}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
                       type="button"
                       onClick={() => deleteMutation.mutate(b.id)}
                       disabled={deleteMutation.isPending}
                     >
                       Delete
-                    </button>
+                    </Button>
                   </>
                 )}
               </div>
-            </div>
+            </Card>
           ))}
 
           {!listQuery.isPending && books.length === 0 ? (

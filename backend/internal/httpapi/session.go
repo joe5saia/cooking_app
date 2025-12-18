@@ -17,39 +17,33 @@ type sessionUser struct {
 	DisplayName pgtype.Text
 }
 
-func (a *App) requireSessionUser(w http.ResponseWriter, r *http.Request) (*sessionUser, bool) {
+func (a *App) requireSessionUser(r *http.Request) (*sessionUser, error) {
 	token := a.readSessionCookie(r)
 	if token == "" {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return nil, false
+		return nil, errUnauthorized("unauthorized")
 	}
 
 	tokenHash := hashToken(token)
 	row, err := a.queries.GetSessionUserByTokenHash(r.Context(), tokenHash)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-			return nil, false
+			return nil, errUnauthorized("unauthorized")
 		}
-		a.logger.Error("get session failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return nil, false
+		return nil, errInternal(err)
 	}
 
 	if !row.SessionExpiresAt.Valid || time.Now().After(row.SessionExpiresAt.Time) {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return nil, false
+		return nil, errUnauthorized("unauthorized")
 	}
 	if !row.IsActive || !row.UserID.Valid {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return nil, false
+		return nil, errUnauthorized("unauthorized")
 	}
 
 	return &sessionUser{
 		UserID:      row.UserID,
 		Username:    row.Username,
 		DisplayName: row.DisplayName,
-	}, true
+	}, nil
 }
 
 func patListResponse(tokens []sqlc.PersonalAccessToken) []map[string]any {
@@ -87,10 +81,4 @@ func timeString(v pgtype.Timestamptz) string {
 		return ""
 	}
 	return v.Time.UTC().Format(time.RFC3339Nano)
-}
-
-func (a *App) writeValidation(w http.ResponseWriter, field, message string) {
-	a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []map[string]string{
-		{"field": field, "message": message},
-	})
 }

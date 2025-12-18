@@ -1,0 +1,6 @@
+id: no-jsx-inline-style
+language: Tsx
+message: 'Avoid JSX inline styles (style={{...}}); use CSS modules, tokens, and primitives.'
+severity: error
+rule:
+  pattern: style={{$$$}}

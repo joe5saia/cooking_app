@@ -12,7 +12,9 @@ import { listRecipeBooks } from '../../api/recipeBooks'
 import { listRecipes, restoreRecipe } from '../../api/recipes'
 import { listTags } from '../../api/tags'
 
-import styles from './CrudList.module.css'
+import { Button, ButtonLink, Card, Input, Select } from '../components'
+
+import styles from './RecipeListPage.module.css'
 import { Page } from './Page'
 
 export function RecipeListPage() {
@@ -101,26 +103,26 @@ export function RecipeListPage() {
       <div className={styles.section}>
         {actionError ? (
           <div role="alert" className={styles.alert}>
-            <div className={styles.row}>
-              <div style={{ flex: 1 }}>{actionError}</div>
-              <button
-                className={styles.button}
+            <div className={styles.alertRow}>
+              <div className={styles.alertMessage}>{actionError}</div>
+              <Button
+                size="sm"
                 type="button"
                 onClick={() => setActionError(null)}
               >
                 Dismiss
-              </button>
+              </Button>
             </div>
           </div>
         ) : null}
 
         <div className={styles.row}>
-          <Link className={styles.button} to="/recipes/new">
+          <ButtonLink size="sm" variant="primary" to="/recipes/new">
             Create recipe
-          </Link>
+          </ButtonLink>
           {q || bookID || tagID || includeDeleted ? (
-            <button
-              className={styles.button}
+            <Button
+              size="sm"
               type="button"
               onClick={() =>
                 updateURL({
@@ -132,13 +134,12 @@ export function RecipeListPage() {
               }
             >
               Clear filters
-            </button>
+            </Button>
           ) : null}
         </div>
 
         <div className={styles.filters} aria-label="Recipe filters">
-          <input
-            className={styles.input}
+          <Input
             value={q}
             onChange={(e) => {
               const next = e.target.value
@@ -147,8 +148,7 @@ export function RecipeListPage() {
             placeholder="Search recipes"
           />
 
-          <select
-            className={styles.input}
+          <Select
             value={bookID}
             onChange={(e) => {
               const next = e.target.value
@@ -162,10 +162,9 @@ export function RecipeListPage() {
                 {b.name}
               </option>
             ))}
-          </select>
+          </Select>
 
-          <select
-            className={styles.input}
+          <Select
             value={tagID}
             onChange={(e) => {
               const next = e.target.value
@@ -179,7 +178,7 @@ export function RecipeListPage() {
                 {t.name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <label className={styles.muted}>
@@ -205,8 +204,8 @@ export function RecipeListPage() {
 
         <div className={styles.list} aria-label="Recipes list">
           {recipes.map((r) => (
-            <div key={r.id} className={styles.item}>
-              <div>
+            <Card key={r.id} padding="sm" className={styles.item}>
+              <div className={styles.itemMain}>
                 <div className={styles.row}>
                   <Link to={`/recipes/${r.id}`}>{r.title}</Link>
                   {r.deleted_at ? (
@@ -251,24 +250,24 @@ export function RecipeListPage() {
                 ) : null}
               </div>
 
-              <div className={styles.actions}>
+              <div className={styles.itemActions}>
                 {!r.deleted_at ? (
-                  <Link className={styles.button} to={`/recipes/${r.id}/edit`}>
+                  <ButtonLink size="sm" to={`/recipes/${r.id}/edit`}>
                     Edit
-                  </Link>
+                  </ButtonLink>
                 ) : null}
                 {includeDeleted && r.deleted_at ? (
-                  <button
-                    className={styles.button}
+                  <Button
+                    size="sm"
                     type="button"
                     onClick={() => restoreMutation.mutate(r.id)}
                     disabled={restoringID === r.id}
                   >
                     {restoringID === r.id ? 'Restoring…' : 'Restore'}
-                  </button>
+                  </Button>
                 ) : null}
               </div>
-            </div>
+            </Card>
           ))}
 
           {!recipesQuery.isPending && recipes.length === 0 ? (
@@ -278,14 +277,14 @@ export function RecipeListPage() {
 
         {recipesQuery.hasNextPage ? (
           <div className={styles.row}>
-            <button
-              className={styles.button}
+            <Button
+              size="sm"
               type="button"
               onClick={() => recipesQuery.fetchNextPage()}
               disabled={recipesQuery.isFetchingNextPage}
             >
               {recipesQuery.isFetchingNextPage ? 'Loading…' : 'Load more'}
-            </button>
+            </Button>
           </div>
         ) : null}
       </div>

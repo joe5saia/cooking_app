@@ -1,15 +1,11 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/saiaj/cooking_app/backend/internal/db/sqlc"
 	"github.com/saiaj/cooking_app/backend/internal/httpapi/response"
@@ -29,17 +25,14 @@ type tagResponse struct {
 	CreatedAt string `json:"created_at"`
 }
 
-func (a *App) handleTagsList(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleTagsList(w http.ResponseWriter, r *http.Request) error {
 	if _, ok := authInfoFromRequest(r); !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
 	tags, err := a.queries.ListTags(r.Context())
 	if err != nil {
-		a.logger.Error("list tags failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	out := make([]tagResponse, 0, len(tags))
@@ -54,24 +47,22 @@ func (a *App) handleTagsList(w http.ResponseWriter, r *http.Request) {
 	if err := response.WriteJSON(w, http.StatusOK, out); err != nil {
 		a.logger.Warn("write failed", "err", err, "path", "/api/v1/tags")
 	}
+	return nil
 }
 
-func (a *App) handleTagsCreate(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleTagsCreate(w http.ResponseWriter, r *http.Request) error {
 	info, ok := authInfoFromRequest(r)
 	if !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
 	var req createTagRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "bad_request", "invalid JSON", nil)
-		return
+	if err := a.decodeJSON(w, r, &req); err != nil {
+		return err
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
-		a.writeValidation(w, "name", "name is required")
-		return
+		return errValidationField("name", "name is required")
 	}
 
 	userID := pgtype.UUID{Bytes: info.UserID, Valid: true}
@@ -81,14 +72,10 @@ func (a *App) handleTagsCreate(w http.ResponseWriter, r *http.Request) {
 		UpdatedBy: userID,
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			a.writeValidation(w, "name", "name already exists")
-			return
+		if isPGUniqueViolation(err) {
+			return errValidationField("name", "name already exists")
 		}
-		a.logger.Error("create tag failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	resp := tagResponse{
@@ -100,34 +87,27 @@ func (a *App) handleTagsCreate(w http.ResponseWriter, r *http.Request) {
 	if err := response.WriteJSON(w, http.StatusOK, resp); err != nil {
 		a.logger.Warn("write failed", "err", err, "path", "/api/v1/tags")
 	}
+	return nil
 }
 
-func (a *App) handleTagsUpdate(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleTagsUpdate(w http.ResponseWriter, r *http.Request) error {
 	info, ok := authInfoFromRequest(r)
 	if !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
-	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
+	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "invalid id", []response.FieldError{
-			{Field: "id", Message: "invalid id"},
-		})
-		return
+		return err
 	}
 
 	var req updateTagRequest
-	decodeErr := json.NewDecoder(r.Body).Decode(&req)
-	if decodeErr != nil {
-		a.writeProblem(w, http.StatusBadRequest, "bad_request", "invalid JSON", nil)
-		return
+	if decodeErr := a.decodeJSON(w, r, &req); decodeErr != nil {
+		return decodeErr
 	}
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
-		a.writeValidation(w, "name", "name is required")
-		return
+		return errValidationField("name", "name is required")
 	}
 
 	userID := pgtype.UUID{Bytes: info.UserID, Valid: true}
@@ -138,17 +118,12 @@ func (a *App) handleTagsUpdate(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			a.writeProblem(w, http.StatusNotFound, "not_found", "not found", nil)
-			return
+			return errNotFound()
 		}
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			a.writeValidation(w, "name", "name already exists")
-			return
+		if isPGUniqueViolation(err) {
+			return errValidationField("name", "name already exists")
 		}
-		a.logger.Error("update tag failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	resp := tagResponse{
@@ -160,33 +135,27 @@ func (a *App) handleTagsUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := response.WriteJSON(w, http.StatusOK, resp); err != nil {
 		a.logger.Warn("write failed", "err", err, "path", "/api/v1/tags")
 	}
+	return nil
 }
 
-func (a *App) handleTagsDelete(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleTagsDelete(w http.ResponseWriter, r *http.Request) error {
 	if _, ok := authInfoFromRequest(r); !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
-	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
+	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "invalid id", []response.FieldError{
-			{Field: "id", Message: "invalid id"},
-		})
-		return
+		return err
 	}
 
 	affected, err := a.queries.DeleteTagByID(r.Context(), pgtype.UUID{Bytes: id, Valid: true})
 	if err != nil {
-		a.logger.Error("delete tag failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 	if affected == 0 {
-		a.writeProblem(w, http.StatusNotFound, "not_found", "not found", nil)
-		return
+		return errNotFound()
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+	return nil
 }

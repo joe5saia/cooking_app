@@ -1,0 +1,34 @@
+# LAN-friendly config that redirects HTTP -> HTTPS for a local hostname (router DNS or mDNS).
+{
+	auto_https disable_redirects
+}
+
+(common) {
+	encode gzip zstd
+
+	# API
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+
+	# Static frontend
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output file /data/access.log
+		format json
+	}
+}
+
+http://:80 {
+	redir https://{host}{uri} permanent
+}
+
+https://{$COOKING_APP_LAN_HOST}:443 {
+	tls internal
+	import common
+}

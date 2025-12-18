@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +41,8 @@ func TestTags_CRUD(t *testing.T) {
 		SessionCookieName:   "cooking_app_session",
 		SessionTTL:          24 * time.Hour,
 		SessionCookieSecure: false,
+		MaxJSONBodyBytes:    2 << 20,
+		StrictJSON:          true,
 	})
 	if err != nil {
 		t.Fatalf("new app: %v", err)
@@ -71,19 +72,7 @@ func TestTags_CRUD(t *testing.T) {
 	}
 	client := &http.Client{Jar: jar}
 
-	resp, err = client.Post(server.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"joe","password":"pw"}`))
-	if err != nil {
-		t.Fatalf("post login: %v", err)
-	}
-	loginBody := resp.Body
-	t.Cleanup(func() {
-		if closeErr := loginBody.Close(); closeErr != nil {
-			t.Errorf("close body: %v", closeErr)
-		}
-	})
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("login status=%d, want %d", resp.StatusCode, http.StatusNoContent)
-	}
+	csrf := loginAndGetCSRFToken(t, client, server.URL)
 
 	resp, err = client.Get(server.URL + "/api/v1/tags")
 	if err != nil {
@@ -106,7 +95,9 @@ func TestTags_CRUD(t *testing.T) {
 		t.Fatalf("listed len=%d, want 0", len(listed))
 	}
 
-	resp, err = client.Post(server.URL+"/api/v1/tags", "application/json", strings.NewReader(`{"name":"Soup"}`))
+	req := newJSONRequest(t, http.MethodPost, server.URL+"/api/v1/tags", `{"name":"Soup"}`)
+	req.Header.Set("X-CSRF-Token", csrf)
+	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("post tags: %v", err)
 	}
@@ -131,7 +122,9 @@ func TestTags_CRUD(t *testing.T) {
 		t.Fatalf("name=%v, want Soup", created["name"])
 	}
 
-	resp, err = client.Post(server.URL+"/api/v1/tags", "application/json", strings.NewReader(`{"name":"soup"}`))
+	req = newJSONRequest(t, http.MethodPost, server.URL+"/api/v1/tags", `{"name":"soup"}`)
+	req.Header.Set("X-CSRF-Token", csrf)
+	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("post tags dup: %v", err)
 	}
@@ -145,11 +138,8 @@ func TestTags_CRUD(t *testing.T) {
 		t.Fatalf("dup status=%d, want %d", resp.StatusCode, http.StatusBadRequest)
 	}
 
-	req, err := http.NewRequest(http.MethodPut, server.URL+"/api/v1/tags/"+id, strings.NewReader(`{"name":"Dinner"}`))
-	if err != nil {
-		t.Fatalf("new update request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
+	req = newJSONRequest(t, http.MethodPut, server.URL+"/api/v1/tags/"+id, `{"name":"Dinner"}`)
+	req.Header.Set("X-CSRF-Token", csrf)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("update tag: %v", err)
@@ -175,6 +165,7 @@ func TestTags_CRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new delete request: %v", err)
 	}
+	req.Header.Set("X-CSRF-Token", csrf)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("delete tag: %v", err)

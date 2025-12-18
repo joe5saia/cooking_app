@@ -2,17 +2,13 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/saiaj/cooking_app/backend/internal/db/sqlc"
 	"github.com/saiaj/cooking_app/backend/internal/httpapi/response"
 )
 
@@ -22,15 +18,15 @@ type recipeTagResponse struct {
 }
 
 type recipeIngredientResponse struct {
-	ID           string          `json:"id"`
-	Position     int             `json:"position"`
-	Quantity     *pgtype.Numeric `json:"quantity"`
-	QuantityText *string         `json:"quantity_text"`
-	Unit         *string         `json:"unit"`
-	Item         string          `json:"item"`
-	Prep         *string         `json:"prep"`
-	Notes        *string         `json:"notes"`
-	OriginalText *string         `json:"original_text"`
+	ID           string   `json:"id"`
+	Position     int      `json:"position"`
+	Quantity     *float64 `json:"quantity"`
+	QuantityText *string  `json:"quantity_text"`
+	Unit         *string  `json:"unit"`
+	Item         string   `json:"item"`
+	Prep         *string  `json:"prep"`
+	Notes        *string  `json:"notes"`
+	OriginalText *string  `json:"original_text"`
 }
 
 type recipeStepResponse struct {
@@ -58,234 +54,62 @@ type recipeDetailResponse struct {
 	DeletedAt        *string                    `json:"deleted_at"`
 }
 
-func (a *App) handleRecipesCreate(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleRecipesCreate(w http.ResponseWriter, r *http.Request) error {
 	info, ok := authInfoFromRequest(r)
 	if !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
 	var req createRecipeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "bad_request", "invalid JSON", nil)
-		return
+	if err := a.decodeJSON(w, r, &req); err != nil {
+		return err
 	}
 
 	if errs := validateCreateRecipeRequest(req); len(errs) > 0 {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", errs)
-		return
-	}
-
-	recipeBookID, err := uuidPtrToPG(req.RecipeBookID)
-	if err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []response.FieldError{
-			{Field: "recipe_book_id", Message: "invalid id"},
-		})
-		return
-	}
-
-	tagUUIDs, err := uuidsToPG(req.TagIDs)
-	if err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []response.FieldError{
-			{Field: "tag_ids", Message: "invalid id"},
-		})
-		return
+		return errValidation(errs)
 	}
 
 	ctx := r.Context()
 	userID := pgtype.UUID{Bytes: info.UserID, Valid: true}
 
-	if len(tagUUIDs) > 0 {
-		count, countErr := a.queries.CountTagsByIDs(ctx, tagUUIDs)
-		if countErr != nil {
-			a.logger.Error("count tags failed", "err", countErr)
-			a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-			return
-		}
-		if int(count) != len(tagUUIDs) {
-			a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []response.FieldError{
-				{Field: "tag_ids", Message: "one or more tags do not exist"},
-			})
-			return
-		}
-	}
-
-	tx, err := a.pool.Begin(ctx)
+	recipeID, err := createRecipeUsecase(ctx, a.recipeWorkflows(), userID, req)
 	if err != nil {
-		a.logger.Error("begin tx failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
-	}
-	defer func() {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil && !errors.Is(rollbackErr, pgx.ErrTxClosed) {
-			a.logger.Warn("rollback failed", "err", rollbackErr)
-		}
-	}()
-
-	servings32, ok := intToInt32Checked(req.Servings)
-	if !ok {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []response.FieldError{
-			{Field: "servings", Message: "servings is too large"},
-		})
-		return
-	}
-	prepTimeMinutes32, ok := intToInt32Checked(req.PrepTimeMinutes)
-	if !ok {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []response.FieldError{
-			{Field: "prep_time_minutes", Message: "prep_time_minutes is too large"},
-		})
-		return
-	}
-	totalTimeMinutes32, ok := intToInt32Checked(req.TotalTimeMinutes)
-	if !ok {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []response.FieldError{
-			{Field: "total_time_minutes", Message: "total_time_minutes is too large"},
-		})
-		return
+		return mapRecipeUsecaseError(err)
 	}
 
-	q := a.queries.WithTx(tx)
-	recipeRow, err := q.CreateRecipe(ctx, sqlc.CreateRecipeParams{
-		Title:            strings.TrimSpace(req.Title),
-		Servings:         servings32,
-		PrepTimeMinutes:  prepTimeMinutes32,
-		TotalTimeMinutes: totalTimeMinutes32,
-		SourceUrl:        textPtrToPG(req.SourceURL),
-		Notes:            textPtrToPG(req.Notes),
-		RecipeBookID:     recipeBookID,
-		CreatedBy:        userID,
-		UpdatedBy:        userID,
-	})
+	detail, err := a.loadRecipeDetail(ctx, recipeID)
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-			a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []response.FieldError{
-				{Field: "recipe_book_id", Message: "recipe book does not exist"},
-			})
-			return
-		}
-		a.logger.Error("create recipe failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
-	}
-
-	for _, ing := range req.Ingredients {
-		position32, ok := intToInt32Checked(ing.Position)
-		if !ok {
-			a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []response.FieldError{
-				{Field: "ingredients.position", Message: "position is too large"},
-			})
-			return
-		}
-
-		quantity, quantityErr := numericPtrFromFloat64(ing.Quantity)
-		if quantityErr != nil {
-			a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []response.FieldError{
-				{Field: "ingredients.quantity", Message: "invalid quantity"},
-			})
-			return
-		}
-		if createErr := q.CreateRecipeIngredient(ctx, sqlc.CreateRecipeIngredientParams{
-			RecipeID:     recipeRow.ID,
-			Position:     position32,
-			Quantity:     quantity,
-			QuantityText: textPtrToPG(ing.QuantityText),
-			Unit:         textPtrToPG(ing.Unit),
-			Item:         strings.TrimSpace(ing.Item),
-			Prep:         textPtrToPG(ing.Prep),
-			Notes:        textPtrToPG(ing.Notes),
-			OriginalText: textPtrToPG(ing.OriginalText),
-			CreatedBy:    userID,
-			UpdatedBy:    userID,
-		}); createErr != nil {
-			a.logger.Error("create ingredient failed", "err", createErr)
-			a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-			return
-		}
-	}
-
-	for _, step := range req.Steps {
-		stepNumber32, ok := intToInt32Checked(step.StepNumber)
-		if !ok {
-			a.writeProblem(w, http.StatusBadRequest, "validation_error", "validation failed", []response.FieldError{
-				{Field: "steps.step_number", Message: "step_number is too large"},
-			})
-			return
-		}
-
-		if createErr := q.CreateRecipeStep(ctx, sqlc.CreateRecipeStepParams{
-			RecipeID:    recipeRow.ID,
-			StepNumber:  stepNumber32,
-			Instruction: strings.TrimSpace(step.Instruction),
-			CreatedBy:   userID,
-			UpdatedBy:   userID,
-		}); createErr != nil {
-			a.logger.Error("create step failed", "err", createErr)
-			a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-			return
-		}
-	}
-
-	for _, tagID := range tagUUIDs {
-		if createErr := q.CreateRecipeTag(ctx, sqlc.CreateRecipeTagParams{
-			RecipeID:  recipeRow.ID,
-			TagID:     tagID,
-			CreatedBy: userID,
-			UpdatedBy: userID,
-		}); createErr != nil {
-			a.logger.Error("create recipe tag failed", "err", createErr)
-			a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-			return
-		}
-	}
-
-	if commitErr := tx.Commit(ctx); commitErr != nil {
-		a.logger.Error("commit failed", "err", commitErr)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
-	}
-
-	detail, err := a.loadRecipeDetail(ctx, recipeRow.ID)
-	if err != nil {
-		a.logger.Error("load recipe detail failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	if err := response.WriteJSON(w, http.StatusCreated, detail); err != nil {
 		a.logger.Warn("write failed", "err", err, "path", "/api/v1/recipes")
 	}
+	return nil
 }
 
-func (a *App) handleRecipesGet(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleRecipesGet(w http.ResponseWriter, r *http.Request) error {
 	if _, ok := authInfoFromRequest(r); !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
-	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
+	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "invalid id", []response.FieldError{
-			{Field: "id", Message: "invalid id"},
-		})
-		return
+		return err
 	}
 
 	detail, err := a.loadRecipeDetail(r.Context(), pgtype.UUID{Bytes: id, Valid: true})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			a.writeProblem(w, http.StatusNotFound, "not_found", "not found", nil)
-			return
+			return errNotFound()
 		}
-		a.logger.Error("load recipe detail failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	if err := response.WriteJSON(w, http.StatusOK, detail); err != nil {
 		a.logger.Warn("write failed", "err", err, "path", "/api/v1/recipes/{id}")
 	}
+	return nil
 }
 
 func (a *App) loadRecipeDetail(ctx context.Context, id pgtype.UUID) (recipeDetailResponse, error) {
@@ -309,10 +133,16 @@ func (a *App) loadRecipeDetail(ctx context.Context, id pgtype.UUID) (recipeDetai
 
 	outIngredients := make([]recipeIngredientResponse, 0, len(ingredients))
 	for _, ing := range ingredients {
-		var quantity *pgtype.Numeric
+		var quantity *float64
 		if ing.Quantity.Valid {
-			q := ing.Quantity
-			quantity = &q
+			f8, err := ing.Quantity.Float64Value()
+			if err != nil {
+				return recipeDetailResponse{}, err
+			}
+			if f8.Valid {
+				q := f8.Float64
+				quantity = &q
+			}
 		}
 		outIngredients = append(outIngredients, recipeIngredientResponse{
 			ID:           uuidString(ing.ID),

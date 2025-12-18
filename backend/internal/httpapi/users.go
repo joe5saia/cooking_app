@@ -1,15 +1,12 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/saiaj/cooking_app/backend/internal/auth/password"
 	"github.com/saiaj/cooking_app/backend/internal/auth/users"
 	"github.com/saiaj/cooking_app/backend/internal/httpapi/response"
@@ -29,24 +26,19 @@ type userResponse struct {
 	CreatedAt   string  `json:"created_at"`
 }
 
-func (a *App) handleUsersList(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleUsersList(w http.ResponseWriter, r *http.Request) error {
 	if _, ok := authInfoFromRequest(r); !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
 	repo, err := users.New(a.queries)
 	if err != nil {
-		a.logger.Error("users repo init failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	rows, err := repo.List(r.Context())
 	if err != nil {
-		a.logger.Error("list users failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	out := make([]userResponse, 0, len(rows))
@@ -67,30 +59,27 @@ func (a *App) handleUsersList(w http.ResponseWriter, r *http.Request) {
 	if err := response.WriteJSON(w, http.StatusOK, out); err != nil {
 		a.logger.Warn("write failed", "err", err, "path", "/api/v1/users")
 	}
+	return nil
 }
 
-func (a *App) handleUsersCreate(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleUsersCreate(w http.ResponseWriter, r *http.Request) error {
 	info, ok := authInfoFromRequest(r)
 	if !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
 	var req createUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "bad_request", "invalid JSON", nil)
-		return
+	if err := a.decodeJSON(w, r, &req); err != nil {
+		return err
 	}
 
 	username, err := users.NormalizeUsername(req.Username)
 	if err != nil {
-		a.writeValidation(w, "username", err.Error())
-		return
+		return errValidationField("username", err.Error())
 	}
 	req.Password = strings.TrimSpace(req.Password)
 	if req.Password == "" {
-		a.writeValidation(w, "password", "password is required")
-		return
+		return errValidationField("password", "password is required")
 	}
 
 	var displayName *string
@@ -103,16 +92,12 @@ func (a *App) handleUsersCreate(w http.ResponseWriter, r *http.Request) {
 
 	hash, err := password.Hash(req.Password)
 	if err != nil {
-		a.logger.Error("password hash failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	repo, err := users.New(a.queries)
 	if err != nil {
-		a.logger.Error("users repo init failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	row, err := repo.Create(r.Context(), users.CreateParams{
@@ -125,14 +110,10 @@ func (a *App) handleUsersCreate(w http.ResponseWriter, r *http.Request) {
 		UpdatedBy:    info.UserID,
 	})
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			a.writeValidation(w, "username", "username already exists")
-			return
+		if isPGUniqueViolation(err) {
+			return errValidationField("username", "username already exists")
 		}
-		a.logger.Error("create user failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	var respDisplayName *string
@@ -151,41 +132,33 @@ func (a *App) handleUsersCreate(w http.ResponseWriter, r *http.Request) {
 	if err := response.WriteJSON(w, http.StatusOK, resp); err != nil {
 		a.logger.Warn("write failed", "err", err, "path", "/api/v1/users")
 	}
+	return nil
 }
 
-func (a *App) handleUsersDeactivate(w http.ResponseWriter, r *http.Request) {
+func (a *App) handleUsersDeactivate(w http.ResponseWriter, r *http.Request) error {
 	info, ok := authInfoFromRequest(r)
 	if !ok {
-		a.writeProblem(w, http.StatusUnauthorized, "unauthorized", "unauthorized", nil)
-		return
+		return errUnauthorized("unauthorized")
 	}
 
-	idStr := chi.URLParam(r, "id")
-	id, err := uuid.Parse(idStr)
+	id, err := parseUUIDParam(r, "id")
 	if err != nil {
-		a.writeProblem(w, http.StatusBadRequest, "validation_error", "invalid id", []response.FieldError{
-			{Field: "id", Message: "invalid id"},
-		})
-		return
+		return err
 	}
 
 	repo, err := users.New(a.queries)
 	if err != nil {
-		a.logger.Error("users repo init failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	_, err = repo.SetActive(r.Context(), id, false, info.UserID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			a.writeProblem(w, http.StatusNotFound, "not_found", "not found", nil)
-			return
+			return errNotFound()
 		}
-		a.logger.Error("deactivate user failed", "err", err)
-		a.writeProblem(w, http.StatusInternalServerError, "internal_error", "internal error", nil)
-		return
+		return errInternal(err)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+	return nil
 }

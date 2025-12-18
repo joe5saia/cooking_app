@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +41,8 @@ func TestUsers_ListCreateDeactivate(t *testing.T) {
 		SessionCookieName:   "cooking_app_session",
 		SessionTTL:          24 * time.Hour,
 		SessionCookieSecure: false,
+		MaxJSONBodyBytes:    2 << 20,
+		StrictJSON:          true,
 	})
 	if err != nil {
 		t.Fatalf("new app: %v", err)
@@ -71,19 +72,7 @@ func TestUsers_ListCreateDeactivate(t *testing.T) {
 	}
 	client := &http.Client{Jar: jar}
 
-	resp, err = client.Post(server.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"joe","password":"pw"}`))
-	if err != nil {
-		t.Fatalf("post login: %v", err)
-	}
-	body = resp.Body
-	t.Cleanup(func() {
-		if closeErr := body.Close(); closeErr != nil {
-			t.Errorf("close body: %v", closeErr)
-		}
-	})
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("login status=%d, want %d", resp.StatusCode, http.StatusNoContent)
-	}
+	csrf := loginAndGetCSRFToken(t, client, server.URL)
 
 	resp, err = client.Get(server.URL + "/api/v1/users")
 	if err != nil {
@@ -113,7 +102,9 @@ func TestUsers_ListCreateDeactivate(t *testing.T) {
 		t.Fatalf("list unexpectedly includes password_hash")
 	}
 
-	resp, err = client.Post(server.URL+"/api/v1/users", "application/json", strings.NewReader(`{"username":"shannon","password":"pw2","display_name":"Shannon"}`))
+	req := newJSONRequest(t, http.MethodPost, server.URL+"/api/v1/users", `{"username":"shannon","password":"pw2","display_name":"Shannon"}`)
+	req.Header.Set("X-CSRF-Token", csrf)
+	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("post users: %v", err)
 	}
@@ -160,11 +151,12 @@ func TestUsers_ListCreateDeactivate(t *testing.T) {
 		t.Fatalf("listed len=%d, want 2", len(listed))
 	}
 
-	req, err := http.NewRequest(http.MethodPut, server.URL+"/api/v1/users/"+id+"/deactivate", nil)
+	deactivateReq, err := http.NewRequest(http.MethodPut, server.URL+"/api/v1/users/"+id+"/deactivate", nil)
 	if err != nil {
 		t.Fatalf("new deactivate request: %v", err)
 	}
-	resp, err = client.Do(req)
+	deactivateReq.Header.Set("X-CSRF-Token", csrf)
+	resp, err = client.Do(deactivateReq)
 	if err != nil {
 		t.Fatalf("deactivate: %v", err)
 	}
@@ -209,7 +201,9 @@ func TestUsers_ListCreateDeactivate(t *testing.T) {
 		t.Fatalf("deactivated user not found in list")
 	}
 
-	resp, err = client.Post(server.URL+"/api/v1/users", "application/json", strings.NewReader(`{"username":"","password":"pw2"}`))
+	req = newJSONRequest(t, http.MethodPost, server.URL+"/api/v1/users", `{"username":"","password":"pw2"}`)
+	req.Header.Set("X-CSRF-Token", csrf)
+	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("post users validation: %v", err)
 	}

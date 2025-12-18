@@ -6,7 +6,6 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 	"time"
 
@@ -57,6 +56,8 @@ func TestRecipes_DeleteRestore(t *testing.T) {
 		SessionCookieName:   "cooking_app_session",
 		SessionTTL:          24 * time.Hour,
 		SessionCookieSecure: false,
+		MaxJSONBodyBytes:    2 << 20,
+		StrictJSON:          true,
 	})
 	if appErr != nil {
 		t.Fatalf("new app: %v", appErr)
@@ -72,19 +73,7 @@ func TestRecipes_DeleteRestore(t *testing.T) {
 	}
 	client := &http.Client{Jar: jar}
 
-	loginResp, loginErr := client.Post(server.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"joe","password":"pw"}`))
-	if loginErr != nil {
-		t.Fatalf("post login: %v", loginErr)
-	}
-	loginBody := loginResp.Body
-	t.Cleanup(func() {
-		if closeErr := loginBody.Close(); closeErr != nil {
-			t.Errorf("close login body: %v", closeErr)
-		}
-	})
-	if loginResp.StatusCode != http.StatusNoContent {
-		t.Fatalf("login status=%d, want %d", loginResp.StatusCode, http.StatusNoContent)
-	}
+	csrf := loginAndGetCSRFToken(t, client, server.URL)
 
 	recipeID := uuid.UUID(recipe.ID.Bytes).String()
 
@@ -92,6 +81,7 @@ func TestRecipes_DeleteRestore(t *testing.T) {
 	if reqErr != nil {
 		t.Fatalf("new request: %v", reqErr)
 	}
+	req.Header.Set("X-CSRF-Token", csrf)
 	resp, doErr := client.Do(req)
 	if doErr != nil {
 		t.Fatalf("delete recipe: %v", doErr)
@@ -115,6 +105,7 @@ func TestRecipes_DeleteRestore(t *testing.T) {
 	if reqErr != nil {
 		t.Fatalf("new restore request: %v", reqErr)
 	}
+	req.Header.Set("X-CSRF-Token", csrf)
 	resp, doErr = client.Do(req)
 	if doErr != nil {
 		t.Fatalf("restore recipe: %v", doErr)
@@ -159,6 +150,8 @@ func TestRecipes_DeleteRestore_Errors(t *testing.T) {
 		SessionCookieName:   "cooking_app_session",
 		SessionTTL:          24 * time.Hour,
 		SessionCookieSecure: false,
+		MaxJSONBodyBytes:    2 << 20,
+		StrictJSON:          true,
 	})
 	if err != nil {
 		t.Fatalf("new app: %v", err)
@@ -174,24 +167,13 @@ func TestRecipes_DeleteRestore_Errors(t *testing.T) {
 	}
 	client := &http.Client{Jar: jar}
 
-	loginResp, err := client.Post(server.URL+"/api/v1/auth/login", "application/json", strings.NewReader(`{"username":"joe","password":"pw"}`))
-	if err != nil {
-		t.Fatalf("post login: %v", err)
-	}
-	loginBody := loginResp.Body
-	t.Cleanup(func() {
-		if closeErr := loginBody.Close(); closeErr != nil {
-			t.Errorf("close login body: %v", closeErr)
-		}
-	})
-	if loginResp.StatusCode != http.StatusNoContent {
-		t.Fatalf("login status=%d, want %d", loginResp.StatusCode, http.StatusNoContent)
-	}
+	csrf := loginAndGetCSRFToken(t, client, server.URL)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, server.URL+"/api/v1/recipes/not-a-uuid", nil)
 	if err != nil {
 		t.Fatalf("new delete request: %v", err)
 	}
+	req.Header.Set("X-CSRF-Token", csrf)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("delete request: %v", err)
@@ -210,6 +192,7 @@ func TestRecipes_DeleteRestore_Errors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new restore request: %v", err)
 	}
+	req.Header.Set("X-CSRF-Token", csrf)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("restore request: %v", err)
@@ -229,6 +212,7 @@ func TestRecipes_DeleteRestore_Errors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new delete request: %v", err)
 	}
+	req.Header.Set("X-CSRF-Token", csrf)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("delete request: %v", err)
@@ -247,6 +231,7 @@ func TestRecipes_DeleteRestore_Errors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new restore request: %v", err)
 	}
+	req.Header.Set("X-CSRF-Token", csrf)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("restore request: %v", err)

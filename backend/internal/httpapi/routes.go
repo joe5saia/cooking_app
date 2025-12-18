@@ -26,16 +26,12 @@ func routes(app *App) http.Handler {
 	})
 
 	r.Route("/api/v1", func(r chi.Router) {
-		r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
-			if err := response.WriteProblem(w, http.StatusNotFound, "not_found", "not found", nil); err != nil {
-				app.logger.Warn("write failed", "err", err, "path", "/api/v1/*")
-			}
+		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+			app.writeError(w, r, errNotFound())
 		})
 
-		r.MethodNotAllowed(func(w http.ResponseWriter, _ *http.Request) {
-			if err := response.WriteProblem(w, http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed", nil); err != nil {
-				app.logger.Warn("write failed", "err", err, "path", "/api/v1/*")
-			}
+		r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+			app.writeError(w, r, errMethodNotAllowed())
 		})
 
 		r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -47,49 +43,49 @@ func routes(app *App) http.Handler {
 		})
 
 		r.Route("/auth", func(r chi.Router) {
-			r.Post("/login", app.handleLogin)
-			r.Post("/logout", app.handleLogout)
-			r.Get("/me", app.handleMe)
+			r.With(app.loginRateLimitMiddleware).Post("/login", app.handle(app.handleLogin))
+			r.With(app.authMiddleware).Post("/logout", app.handle(app.handleLogout))
+			r.With(app.authMiddleware).Get("/me", app.handle(app.handleMe))
 		})
 
 		r.Route("/tokens", func(r chi.Router) {
 			r.Use(app.authMiddleware)
-			r.Get("/", app.handleTokensList)
-			r.Post("/", app.handleTokensCreate)
-			r.Delete("/{id}", app.handleTokensDelete)
+			r.Get("/", app.handle(app.handleTokensList))
+			r.Post("/", app.handle(app.handleTokensCreate))
+			r.Delete("/{id}", app.handle(app.handleTokensDelete))
 		})
 
 		r.Route("/users", func(r chi.Router) {
 			r.Use(app.authMiddleware)
-			r.Get("/", app.handleUsersList)
-			r.Post("/", app.handleUsersCreate)
-			r.Put("/{id}/deactivate", app.handleUsersDeactivate)
+			r.Get("/", app.handle(app.handleUsersList))
+			r.Post("/", app.handle(app.handleUsersCreate))
+			r.Put("/{id}/deactivate", app.handle(app.handleUsersDeactivate))
 		})
 
 		r.Route("/tags", func(r chi.Router) {
 			r.Use(app.authMiddleware)
-			r.Get("/", app.handleTagsList)
-			r.Post("/", app.handleTagsCreate)
-			r.Put("/{id}", app.handleTagsUpdate)
-			r.Delete("/{id}", app.handleTagsDelete)
+			r.Get("/", app.handle(app.handleTagsList))
+			r.Post("/", app.handle(app.handleTagsCreate))
+			r.Put("/{id}", app.handle(app.handleTagsUpdate))
+			r.Delete("/{id}", app.handle(app.handleTagsDelete))
 		})
 
 		r.Route("/recipe-books", func(r chi.Router) {
 			r.Use(app.authMiddleware)
-			r.Get("/", app.handleRecipeBooksList)
-			r.Post("/", app.handleRecipeBooksCreate)
-			r.Put("/{id}", app.handleRecipeBooksUpdate)
-			r.Delete("/{id}", app.handleRecipeBooksDelete)
+			r.Get("/", app.handle(app.handleRecipeBooksList))
+			r.Post("/", app.handle(app.handleRecipeBooksCreate))
+			r.Put("/{id}", app.handle(app.handleRecipeBooksUpdate))
+			r.Delete("/{id}", app.handle(app.handleRecipeBooksDelete))
 		})
 
 		r.Route("/recipes", func(r chi.Router) {
 			r.Use(app.authMiddleware)
-			r.Get("/", app.handleRecipesList)
-			r.Get("/{id}", app.handleRecipesGet)
-			r.Post("/", app.handleRecipesCreate)
-			r.Put("/{id}", app.handleRecipesUpdate)
-			r.Delete("/{id}", app.handleRecipesDelete)
-			r.Put("/{id}/restore", app.handleRecipesRestore)
+			r.Get("/", app.handle(app.handleRecipesList))
+			r.Get("/{id}", app.handle(app.handleRecipesGet))
+			r.Post("/", app.handle(app.handleRecipesCreate))
+			r.Put("/{id}", app.handle(app.handleRecipesUpdate))
+			r.Delete("/{id}", app.handle(app.handleRecipesDelete))
+			r.Put("/{id}/restore", app.handle(app.handleRecipesRestore))
 		})
 	})
 

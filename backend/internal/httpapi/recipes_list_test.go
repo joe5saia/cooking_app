@@ -146,6 +146,8 @@ func TestRecipes_List(t *testing.T) {
 		SessionCookieName:   "cooking_app_session",
 		SessionTTL:          24 * time.Hour,
 		SessionCookieSecure: false,
+		MaxJSONBodyBytes:    2 << 20,
+		StrictJSON:          true,
 	})
 	if appErr != nil {
 		t.Fatalf("new app: %v", appErr)

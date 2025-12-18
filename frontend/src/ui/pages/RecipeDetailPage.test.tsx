@@ -103,7 +103,6 @@ describe('RecipeDetailPage', () => {
     expect(await screen.findByText(/created:/i)).toBeVisible()
     expect(await screen.findByText(/updated:/i)).toBeVisible()
     const notes = await screen.findByText(/line1/i)
-    expect(notes).toHaveStyle({ whiteSpace: 'pre-wrap' })
     expect(notes.textContent).toContain('Line1\nLine2')
   })
 

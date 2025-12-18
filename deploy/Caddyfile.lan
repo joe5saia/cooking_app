@@ -1,0 +1,45 @@
+# LAN-friendly config that serves both HTTP and HTTPS without redirects by default.
+#
+# - HTTP stays available on :80 (no automatic HTTP->HTTPS redirect).
+# - HTTPS is available on :443 using Caddy's internal CA (`tls internal`).
+# - This is intended for LAN deployments without a public domain.
+#
+# Note: Clients must trust the Caddy internal CA to avoid browser warnings.
+#
+# Important: When running Caddy in Docker with port publishing, clients may omit SNI for IP-based URLs
+# (e.g. `https://192.168.1.10`). To make `https://<lan-ip>/` work reliably (including with curl),
+# this config is intended to be used with host networking for the Caddy container.
+{
+	# Keep HTTP available by default; do not generate automatic HTTP->HTTPS redirects.
+	auto_https disable_redirects
+}
+
+(common) {
+	encode gzip zstd
+
+	# API
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	# Static frontend
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+
+	log {
+		output file /data/access.log
+		format json
+	}
+}
+
+http://:80 {
+	import common
+}
+
+https://{$COOKING_APP_LAN_IP}:443 {
+	tls internal
+	import common
+}

@@ -4,7 +4,9 @@ import { useMemo, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { createTag, deleteTag, listTags, updateTag } from '../../api/tags'
 
-import styles from './CrudList.module.css'
+import { Button, Card, Input } from '../components'
+
+import styles from './TagListPage.module.css'
 import { Page } from './Page'
 
 export function TagListPage() {
@@ -104,20 +106,15 @@ export function TagListPage() {
           className={styles.form}
           aria-label="Create tag"
         >
-          <input
-            className={styles.input}
+          <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="New tag name"
             disabled={createMutation.isPending}
           />
-          <button
-            className={styles.button}
-            type="submit"
-            disabled={createMutation.isPending}
-          >
+          <Button size="sm" type="submit" disabled={createMutation.isPending}>
             Add
-          </button>
+          </Button>
         </form>
 
         {listQuery.isPending ? <div>Loading…</div> : null}
@@ -129,61 +126,63 @@ export function TagListPage() {
 
         <div className={styles.list} aria-label="Tags list">
           {tags.map((t) => (
-            <div className={styles.item} key={t.id}>
-              {editingID === t.id ? (
-                <input
-                  className={styles.input}
-                  value={editingName}
-                  onChange={(e) => setEditingName(e.target.value)}
-                  aria-label="Edit name"
-                  disabled={updateMutation.isPending}
-                />
-              ) : (
-                <div>{t.name}</div>
-              )}
+            <Card className={styles.item} padding="sm" key={t.id}>
+              <div className={styles.name}>
+                {editingID === t.id ? (
+                  <Input
+                    value={editingName}
+                    onChange={(e) => setEditingName(e.target.value)}
+                    aria-label="Edit name"
+                    disabled={updateMutation.isPending}
+                  />
+                ) : (
+                  <div>{t.name}</div>
+                )}
+              </div>
 
               <div className={styles.actions}>
                 {editingID === t.id ? (
                   <>
-                    <button
-                      className={styles.button}
+                    <Button
+                      size="sm"
                       type="button"
                       onClick={() => onSaveEdit(t.id)}
                       disabled={updateMutation.isPending}
                     >
                       Save
-                    </button>
-                    <button
-                      className={styles.button}
+                    </Button>
+                    <Button
+                      size="sm"
                       type="button"
                       onClick={cancelEdit}
                       disabled={updateMutation.isPending}
                     >
                       Cancel
-                    </button>
+                    </Button>
                   </>
                 ) : (
                   <>
-                    <button
-                      className={styles.button}
+                    <Button
+                      size="sm"
                       type="button"
                       onClick={() => startEdit(t.id, t.name)}
                       disabled={deleteMutation.isPending}
                     >
                       Rename
-                    </button>
-                    <button
-                      className={`${styles.button} ${styles.buttonDanger}`}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="danger"
                       type="button"
                       onClick={() => deleteMutation.mutate(t.id)}
                       disabled={deleteMutation.isPending}
                     >
                       Delete
-                    </button>
+                    </Button>
                   </>
                 )}
               </div>
-            </div>
+            </Card>
           ))}
 
           {!listQuery.isPending && tags.length === 0 ? (
