@@ -9,6 +9,7 @@ dist/
 .vite/
 backend/bin/
 .env
+.env.dev
 backend/.air/
 deploy/backups/
 .beads/*

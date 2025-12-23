@@ -2,6 +2,10 @@ import { chromium, type FullConfig } from '@playwright/test'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
+import { loadEnvFile } from '../src/utils/envFile'
+
+loadEnvFile({ envFilePath: path.resolve(process.cwd(), '..', '.env.dev') })
+
 function getRequiredEnv(name: string) {
   const value = process.env[name]
   if (typeof value !== 'string' || value.trim() === '') {

@@ -16,7 +16,10 @@ Monorepo containing a Go backend API and a React + TypeScript + Vite frontend, b
 - Use `make backend-*` or `make frontend-*` targets for focused tasks (see below).
 
 ## Local development (Docker Compose)
-- Copy env: `cp .env.example .env` (optional; defaults are fine)
+- Create a local dev env file: `cp .env.example .env.dev` (optional; defaults are fine).
+  - `.env.dev` is intentionally local-only and ignored by git.
+  - `make dev-up`/`make dev-down` use `.env.dev` by default; override with `DEV_ENV_FILE=path`.
+  - Playwright loads `.env.dev` for `COOKING_APP_E2E_USERNAME`/`COOKING_APP_E2E_PASSWORD`.
 - Start stack: `make dev-up`
 - URLs:
   - Frontend: `http://localhost:5173`

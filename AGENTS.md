@@ -239,6 +239,11 @@ Guidelines:
 
 Use `npx playwright` for quick, ad-hoc navigation and screenshots against a running environment.
 
+## Local usage note
+
+- From `frontend/`: run `npm install` once, then `npx playwright install chromium` to fetch the browser.
+- Quick login check example (uses default dev credentials): `node --input-type=module -e "import { chromium } from '@playwright/test'; const browser=await chromium.launch(); const page=await browser.newPage(); await page.goto('http://127.0.0.1:5173/login'); await page.getByLabel('Username').fill('admin'); await page.getByLabel('Password').fill('sybil'); await page.getByRole('button', { name: /sign in/i }).click(); await page.waitForURL('**/recipes'); await browser.close();"`
+
 ## One-time setup
 
 - Install a browser (first time on a machine): `npx -y playwright install chromium`
