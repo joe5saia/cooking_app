@@ -1,0 +1,16 @@
+id: no-direct-fetch
+language: TypeScript
+message: Use apiFetchJSON from src/api/client instead of calling fetch directly.
+severity: error
+files:
+  - src/**/*.ts
+  - src/**/*.tsx
+ignores:
+  - src/api/client.ts
+  - src/**/*.test.ts
+  - src/**/*.test.tsx
+rule:
+  any:
+    - pattern: fetch($$$)
+    - pattern: window.fetch($$$)
+    - pattern: globalThis.fetch($$$)

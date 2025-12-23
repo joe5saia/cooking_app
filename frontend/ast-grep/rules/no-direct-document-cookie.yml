@@ -1,0 +1,16 @@
+id: no-direct-document-cookie
+language: TypeScript
+message: Avoid direct document.cookie usage; use api/client helpers instead.
+severity: error
+files:
+  - src/**/*.ts
+  - src/**/*.tsx
+ignores:
+  - src/api/client.ts
+  - src/**/*.test.ts
+  - src/**/*.test.tsx
+rule:
+  any:
+    - pattern: document.cookie
+    - pattern: window.document.cookie
+    - pattern: globalThis.document.cookie
