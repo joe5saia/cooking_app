@@ -1,4 +1,6 @@
 .select {
+  /* Keep padding/border inside the grid column to avoid overlaps. */
+  box-sizing: border-box;
   width: 100%;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);

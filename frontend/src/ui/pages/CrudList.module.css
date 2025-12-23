@@ -123,3 +123,20 @@
   display: block;
   margin-top: var(--space-2);
 }
+
+/* Responsive layout tweaks to prevent action controls from overlapping inputs. */
+@media (max-width: 720px) {
+  .filters {
+    grid-template-columns: 1fr;
+  }
+
+  .item {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
