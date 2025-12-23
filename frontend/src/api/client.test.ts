@@ -5,6 +5,8 @@ import { ApiError, UnauthorizedError, apiFetchJSON } from './client'
 describe('apiFetchJSON', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    document.cookie =
+      'cooking_app_session_csrf=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/'
   })
 
   it('includes credentials by default', async () => {
@@ -60,5 +62,44 @@ describe('apiFetchJSON', () => {
         message: 'nope',
       } satisfies Partial<ApiError>),
     )
+  })
+
+  it('adds CSRF token header for unsafe methods when cookie is present', async () => {
+    document.cookie = 'cooking_app_session_csrf=token-123; path=/'
+    const fetchMock = vi.fn(async (..._args: unknown[]) => {
+      void _args
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await apiFetchJSON('/api/v1/users', {
+      method: 'POST',
+      body: JSON.stringify({ username: 'test' }),
+    })
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined
+    const headers = new Headers(init?.headers)
+    expect(headers.get('X-CSRF-Token')).toBe('token-123')
+  })
+
+  it('does not attach CSRF token header for safe methods', async () => {
+    document.cookie = 'cooking_app_session_csrf=token-123; path=/'
+    const fetchMock = vi.fn(async (..._args: unknown[]) => {
+      void _args
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await apiFetchJSON('/api/v1/users')
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined
+    const headers = new Headers(init?.headers)
+    expect(headers.get('X-CSRF-Token')).toBeNull()
   })
 })
