@@ -87,6 +87,13 @@ func routes(app *App) http.Handler {
 			r.Delete("/{id}", app.handle(app.handleRecipesDelete))
 			r.Put("/{id}/restore", app.handle(app.handleRecipesRestore))
 		})
+
+		r.Route("/meal-plans", func(r chi.Router) {
+			r.Use(app.authMiddleware)
+			r.Get("/", app.handle(app.handleMealPlansList))
+			r.Post("/", app.handle(app.handleMealPlansCreate))
+			r.Delete("/{date}/{recipe_id}", app.handle(app.handleMealPlansDelete))
+		})
 	})
 
 	return r

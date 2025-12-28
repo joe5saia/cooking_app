@@ -119,7 +119,13 @@ ssh kittenserver 'cd ~/apps/cooking_app && set -a && . ./.env && set +a && docke
 
 ## Create first user
 
-To create the first user on a fresh database:
+If you use `deploy/deploy.sh`, it automatically bootstraps a default user (username `admin`, password `sybil`, display name `Admin`) when the database is empty. You can override those defaults by setting:
+
+- `COOKING_APP_BOOTSTRAP_USERNAME`
+- `COOKING_APP_BOOTSTRAP_PASSWORD`
+- `COOKING_APP_BOOTSTRAP_DISPLAY_NAME`
+
+To create the first user manually on a fresh database:
 
 ```bash
 ssh kittenserver 'cd ~/apps/cooking_app && set -a && . ./.env && set +a && docker run --rm --network deploy_internal -v "$PWD/backend:/src" -w /src -e DATABASE_URL="postgres://cooking_app:${POSTGRES_PASSWORD}@db:5432/cooking_app?sslmode=disable" golang:1.25 go run ./cmd/cli bootstrap-user --username admin --password "CHOOSE_A_PASSWORD" --display-name "Admin"'

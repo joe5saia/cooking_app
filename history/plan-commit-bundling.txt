@@ -1,0 +1,28 @@
+Goal: Provide a commit bundling plan for cookctl scaffold changes that keeps .beads/issues.jsonl in sync.
+
+Scope in worktree:
+- New cookctl entrypoint + internal packages.
+- Config/credentials/client/app changes for cookctl commands.
+- Docs: README, docs/cookctl.md, history/cooking-cli-product.md.
+- Build target updates in backend/Makefile.
+- Beads issue log updates.
+
+Plan A (single commit; simplest + beads-safe):
+1) One commit containing all code + docs + build + beads changes.
+   - Pros: .beads/issues.jsonl stays consistent; no partial state.
+   - Cons: large commit.
+
+Plan B (two commits; if you want separation):
+1) Commit code + build:
+   - backend/cmd/cookctl/
+   - backend/internal/cookctl/
+   - backend/go.mod
+   - backend/go.sum
+   - backend/Makefile
+2) Commit docs + beads:
+   - docs/cookctl.md
+   - history/cooking-cli-product.md
+   - README.md
+   - .beads/issues.jsonl
+
+Note: If splitting into more than two commits, you must reconcile .beads/issues.jsonl changes per commit, which is usually not worth the complexity.

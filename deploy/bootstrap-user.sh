@@ -84,46 +84,64 @@ display_name_b64="$(printf "%s" "$DISPLAY_NAME" | base64 | tr -d '\n')"
 
 echo "Bootstrapping user on $SSH_HOST:$REMOTE_DIR_RESOLVED ..." >&2
 
-ssh "${SSH_OPTS[@]}" "$SSH_HOST" \
-  "USERNAME_B64='$username_b64' PASSWORD_B64='$password_b64' DISPLAY_NAME_B64='$display_name_b64' REMOTE_DIR='$REMOTE_DIR_RESOLVED' bash -lc 'set -euo pipefail
-    if ! command -v docker >/dev/null 2>&1; then
-      echo \"Missing dependency: docker\" >&2
-      exit 1
-    fi
-    if ! command -v base64 >/dev/null 2>&1; then
-      echo \"Missing dependency: base64\" >&2
-      exit 1
-    fi
+set +e
+ssh_output="$(
+  ssh "${SSH_OPTS[@]}" "$SSH_HOST" \
+    "USERNAME_B64='$username_b64' PASSWORD_B64='$password_b64' DISPLAY_NAME_B64='$display_name_b64' REMOTE_DIR='$REMOTE_DIR_RESOLVED' bash -lc 'set -euo pipefail
+      if ! command -v docker >/dev/null 2>&1; then
+        echo \"Missing dependency: docker\" >&2
+        exit 1
+      fi
+      if ! command -v base64 >/dev/null 2>&1; then
+        echo \"Missing dependency: base64\" >&2
+        exit 1
+      fi
 
-    username=\"\$(printf \"%s\" \"\$USERNAME_B64\" | base64 --decode)\"
-    password=\"\$(printf \"%s\" \"\$PASSWORD_B64\" | base64 --decode)\"
-    display_name=\"\$(printf \"%s\" \"\$DISPLAY_NAME_B64\" | base64 --decode)\"
+      username=\"\$(printf \"%s\" \"\$USERNAME_B64\" | base64 --decode)\"
+      password=\"\$(printf \"%s\" \"\$PASSWORD_B64\" | base64 --decode)\"
+      display_name=\"\$(printf \"%s\" \"\$DISPLAY_NAME_B64\" | base64 --decode)\"
 
-    if [[ -z \"\$username\" || -z \"\$password\" ]]; then
-      echo \"Username and password are required.\" >&2
-      exit 2
-    fi
+      if [[ -z \"\$username\" || -z \"\$password\" ]]; then
+        echo \"Username and password are required.\" >&2
+        exit 2
+      fi
 
-    cd \"\$REMOTE_DIR\"
-    if [[ ! -f ./.env ]]; then
-      echo \"Missing .env at \$REMOTE_DIR/.env\" >&2
-      exit 1
-    fi
+      cd \"\$REMOTE_DIR\"
+      if [[ ! -f ./.env ]]; then
+        echo \"Missing .env at \$REMOTE_DIR/.env\" >&2
+        exit 1
+      fi
 
-    set -a
-    . ./.env
-    set +a
+      set -a
+      . ./.env
+      set +a
 
-    if [[ -z \"\${POSTGRES_PASSWORD:-}\" ]]; then
-      echo \"POSTGRES_PASSWORD is required in .env\" >&2
-      exit 1
-    fi
+      if [[ -z \"\${POSTGRES_PASSWORD:-}\" ]]; then
+        echo \"POSTGRES_PASSWORD is required in .env\" >&2
+        exit 1
+      fi
 
-    database_url=\"postgres://cooking_app:\${POSTGRES_PASSWORD}@db:5432/cooking_app?sslmode=disable\"
-    args=(--username \"\$username\" --password \"\$password\")
-    if [[ -n \"\$display_name\" ]]; then
-      args+=(--display-name \"\$display_name\")
-    fi
+      database_url=\"postgres://cooking_app:\${POSTGRES_PASSWORD}@db:5432/cooking_app?sslmode=disable\"
+      args=(--username \"\$username\" --password \"\$password\")
+      if [[ -n \"\$display_name\" ]]; then
+        args+=(--display-name \"\$display_name\")
+      fi
 
-    docker run --rm --network deploy_internal -v \"\$PWD/backend:/src\" -w /src -e DATABASE_URL=\"\$database_url\" golang:1.25 go run ./cmd/cli bootstrap-user \"\${args[@]}\"
-  '"
+      docker run --rm --network deploy_internal -v \"\$PWD/backend:/src\" -w /src -e DATABASE_URL=\"\$database_url\" golang:1.25 go run ./cmd/cli bootstrap-user \"\${args[@]}\"
+    '" 2>&1
+)"
+ssh_status=$?
+set -e
+
+if [[ "$ssh_status" -ne 0 ]]; then
+  if printf "%s" "$ssh_output" | grep -Fq "bootstrap refused: users table is not empty"; then
+    printf "%s\n" "$ssh_output" >&2
+    exit 0
+  fi
+  printf "%s\n" "$ssh_output" >&2
+  exit "$ssh_status"
+fi
+
+if [[ -n "$ssh_output" ]]; then
+  printf "%s\n" "$ssh_output"
+fi

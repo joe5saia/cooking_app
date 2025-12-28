@@ -4,6 +4,7 @@ import { RequireAuth } from './auth/RequireAuth'
 import { AppShell } from './ui/AppShell'
 import { BookListPage } from './ui/pages/BookListPage'
 import { LoginPage } from './ui/pages/LoginPage'
+import { MealPlanPage } from './ui/pages/MealPlanPage'
 import { RecipeDetailPage } from './ui/pages/RecipeDetailPage'
 import { RecipeEditorPage } from './ui/pages/RecipeEditorPage'
 import { RecipeListPage } from './ui/pages/RecipeListPage'
@@ -30,6 +31,7 @@ export function AppRoutes() {
             element={<RecipeEditorPage mode="edit" />}
           />
 
+          <Route path="/meal-plan" element={<MealPlanPage />} />
           <Route path="/books" element={<BookListPage />} />
           <Route path="/tags" element={<TagListPage />} />
 

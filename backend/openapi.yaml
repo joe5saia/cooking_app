@@ -12,6 +12,7 @@ tags:
   - name: users
   - name: recipe-books
   - name: tags
+  - name: meal-plans
   - name: recipes
 paths:
   /api/v1/healthz:
@@ -406,6 +407,87 @@ paths:
       security:
         - cookieAuth: []
         - bearerAuth: []
+  /api/v1/meal-plans:
+    get:
+      tags: [meal-plans]
+      summary: List meal plan entries
+      parameters:
+        - name: start
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: end
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MealPlanListResponse"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    post:
+      tags: [meal-plans]
+      summary: Add recipe to meal plan
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMealPlanRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MealPlanEntry"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "409":
+          $ref: "#/components/responses/Problem409"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/meal-plans/{date}/{recipe_id}:
+    delete:
+      tags: [meal-plans]
+      summary: Remove recipe from meal plan
+      parameters:
+        - $ref: "#/components/parameters/DateParam"
+        - $ref: "#/components/parameters/RecipeIDParam"
+      responses:
+        "204":
+          description: Removed
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
   /api/v1/recipes:
     get:
       tags: [recipes]
@@ -568,6 +650,20 @@ components:
   parameters:
     UUIDParam:
       name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    DateParam:
+      name: date
+      in: path
+      required: true
+      schema:
+        type: string
+        format: date
+    RecipeIDParam:
+      name: recipe_id
       in: path
       required: true
       schema:
@@ -738,6 +834,33 @@ components:
       properties:
         name: { type: string }
       required: [name]
+    MealPlanRecipe:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+      required: [id, title]
+    MealPlanEntry:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        recipe:
+          $ref: "#/components/schemas/MealPlanRecipe"
+      required: [date, recipe]
+    MealPlanListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MealPlanEntry"
+      required: [items]
+    CreateMealPlanRequest:
+      type: object
+      properties:
+        date: { type: string, format: date }
+        recipe_id: { type: string, format: uuid }
+      required: [date, recipe_id]
     RecipeTag:
       type: object
       properties:

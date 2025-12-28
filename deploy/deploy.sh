@@ -18,6 +18,9 @@ Environment variables (optional):
   COOKING_APP_CADDYFILE   Caddyfile to use (default: Caddyfile; LAN HTTPS: Caddyfile.lan)
   COOKING_APP_LAN_IP      Server LAN IP for `Caddyfile.lan` (default: --ip)
   COOKING_APP_LAN_CADDYFILE  Caddyfile for LAN compose (default: Caddyfile.lan)
+  COOKING_APP_BOOTSTRAP_USERNAME  First user username (default: admin)
+  COOKING_APP_BOOTSTRAP_PASSWORD  First user password (default: sybil)
+  COOKING_APP_BOOTSTRAP_DISPLAY_NAME  First user display name (default: Admin)
   SESSION_COOKIE_SECURE   true/false (default: true with --lan-https; otherwise false when COOKING_APP_DOMAIN=:80, else true)
   LOG_LEVEL               Backend log level (default info)
 EOF
@@ -132,6 +135,9 @@ COOKING_APP_DOMAIN="${COOKING_APP_DOMAIN:-:80}"
 COOKING_APP_CADDYFILE="${COOKING_APP_CADDYFILE:-Caddyfile}"
 COOKING_APP_LAN_IP="${COOKING_APP_LAN_IP:-$SERVER_IP}"
 COOKING_APP_LAN_CADDYFILE="${COOKING_APP_LAN_CADDYFILE:-Caddyfile.lan}"
+COOKING_APP_BOOTSTRAP_USERNAME="${COOKING_APP_BOOTSTRAP_USERNAME:-admin}"
+COOKING_APP_BOOTSTRAP_PASSWORD="${COOKING_APP_BOOTSTRAP_PASSWORD:-sybil}"
+COOKING_APP_BOOTSTRAP_DISPLAY_NAME="${COOKING_APP_BOOTSTRAP_DISPLAY_NAME:-Admin}"
 
 compose_file_flags="-f deploy/compose.yaml"
 if [[ "$LAN_HTTPS" -eq 1 ]]; then
@@ -212,6 +218,16 @@ ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --
 
 echo "Running migrations (goose)..." >&2
 ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && set -a && . ./.env && set +a && for i in {1..30}; do docker run --rm --network deploy_internal -v \"\$PWD/backend:/src\" -w /src golang:1.25 go run github.com/pressly/goose/v3/cmd/goose@v3.26.0 -dir ./migrations postgres \"postgres://cooking_app:\${POSTGRES_PASSWORD}@db:5432/cooking_app?sslmode=disable\" up && exit 0; sleep 2; done; exit 1"
+
+echo "Bootstrapping default user (if needed)..." >&2
+bootstrap_args=(
+  --host "$SSH_HOST"
+  --remote-dir "$REMOTE_DIR_RESOLVED"
+  --username "$COOKING_APP_BOOTSTRAP_USERNAME"
+  --password "$COOKING_APP_BOOTSTRAP_PASSWORD"
+  --display-name "$COOKING_APP_BOOTSTRAP_DISPLAY_NAME"
+)
+"$ROOT_DIR/deploy/bootstrap-user.sh" "${bootstrap_args[@]}"
 
 echo "Starting API + Caddy..." >&2
 ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --env-file .env $compose_file_flags up -d --build api caddy"

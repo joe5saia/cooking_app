@@ -30,6 +30,9 @@ Monorepo containing a Go backend API and a React + TypeScript + Vite frontend, b
 ## Backend (from repo root or `backend/`)
 - Run API: `make backend-run-api` (requires `DATABASE_URL`).
 - Run CLI: `go run ./cmd/cli bootstrap-user --username alice --password '...'` (from `backend/`; requires `DATABASE_URL`).
+- Companion CLI: `go run ./cmd/cookctl --help` (from `backend/`; see `docs/cookctl.md`).
+- Build cookctl: `make -C backend cookctl-build`.
+- Shell completions: `./backend/bin/cookctl completion bash` (see `docs/cookctl.md`).
 - Format: `make backend-fmt`
 - Lint: `make backend-lint` (installs `golangci-lint`/`goimports` into `backend/bin/`)
 - Generate sqlc code: `make -C backend sqlc-generate`

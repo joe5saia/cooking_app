@@ -1,0 +1,274 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.calendarCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.calendarHeader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.kicker {
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.subtitle {
+  font-size: 13px;
+  color: var(--color-muted);
+  margin-top: var(--space-1);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.monthLabel {
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.calendarScroller {
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+}
+
+.weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(110px, 1fr));
+  gap: var(--space-2);
+  min-width: 770px;
+}
+
+.weekday {
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--color-muted);
+}
+
+.calendarGrid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(110px, 1fr));
+  gap: var(--space-2);
+  min-width: 770px;
+}
+
+.dayCell {
+  min-height: 160px;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  transition:
+    border-color 150ms ease,
+    background 150ms ease;
+}
+
+.dayCell[data-outside='true'] {
+  opacity: 0.55;
+}
+
+.dayCell[data-selected='true'] {
+  border-color: var(--color-accent-border);
+  background: linear-gradient(
+    140deg,
+    rgba(167, 199, 255, 0.16),
+    rgba(231, 234, 240, 0.04)
+  );
+}
+
+.dayHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.daySelect {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 4px 0;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.daySelect:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.dayNumber {
+  font-size: 13px;
+}
+
+.dayAction {
+  padding: 4px 10px;
+}
+
+.dayRecipes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.recipeChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border-strong);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--color-text);
+  text-decoration: none;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.recipeChip:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.moreCount {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.detailCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.dayView {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.dayToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: space-between;
+  align-items: center;
+}
+
+.detailHeader {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.detailLabel {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.detailTitle {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin-top: var(--space-1);
+}
+
+.detailMeta {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin-top: var(--space-1);
+}
+
+.planList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.planItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-2);
+}
+
+.planLink {
+  color: var(--color-text);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.planLink:hover {
+  text-decoration: underline;
+}
+
+.emptyState {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.addForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.notice {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+@media (min-width: 720px) {
+  .calendarHeader {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 720px) {
+  .dayCell {
+    min-height: 140px;
+    padding: var(--space-2);
+  }
+
+  .planItem {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dayCell {
+    transition: none;
+  }
+}

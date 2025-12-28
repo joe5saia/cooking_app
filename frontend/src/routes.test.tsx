@@ -9,6 +9,9 @@ import { AppRoutes } from './routes'
 describe('routes', () => {
   afterEach(() => {
     cleanup()
+    if (globalThis.localStorage && typeof localStorage.clear === 'function') {
+      localStorage.clear()
+    }
     vi.unstubAllGlobals()
   })
 
@@ -25,6 +28,18 @@ describe('routes', () => {
         }
         if (url.endsWith('/api/v1/tags')) {
           return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        if (url.includes('/api/v1/recipes')) {
+          return new Response(
+            JSON.stringify({ items: [], next_cursor: null }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          )
+        }
+        if (url.includes('/api/v1/meal-plans')) {
+          return new Response(JSON.stringify({ items: [] }), {
             status: 200,
             headers: { 'content-type': 'application/json' },
           })
@@ -51,6 +66,11 @@ describe('routes', () => {
 
     await user.click(screen.getByRole('link', { name: /tags/i }))
     expect(await screen.findByRole('heading', { name: /tags/i })).toBeVisible()
+
+    await user.click(screen.getByRole('link', { name: /meal plan/i }))
+    expect(
+      await screen.findByRole('heading', { name: /meal plan/i }),
+    ).toBeVisible()
 
     await user.click(screen.getByRole('link', { name: /settings/i }))
     expect(

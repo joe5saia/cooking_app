@@ -33,6 +33,19 @@ if [[ -z "${SSH_LOG:-}" ]]; then
 fi
 
 printf '%s\n' "$@" >>"$SSH_LOG"
+
+if [[ -n "${SSH_MOCK_OUTPUT:-}" ]]; then
+  if [[ "${SSH_MOCK_OUTPUT_STREAM:-stderr}" == "stdout" ]]; then
+    printf '%s\n' "$SSH_MOCK_OUTPUT"
+  else
+    printf '%s\n' "$SSH_MOCK_OUTPUT" >&2
+  fi
+fi
+
+if [[ -n "${SSH_MOCK_STATUS:-}" ]]; then
+  exit "$SSH_MOCK_STATUS"
+fi
+
 exit 0
 EOF
 chmod +x "$tmp_dir/bin/ssh"
@@ -62,5 +75,12 @@ fi
 if ! grep -q "PASSWORD_B64=" "$SSH_LOG"; then
   fail "expected PASSWORD_B64 in ssh command"
 fi
+
+export SSH_MOCK_OUTPUT="bootstrap refused: users table is not empty"
+export SSH_MOCK_STATUS=1
+if ! "$SCRIPT" --username alice --password secret --host example --remote-dir ~/apps/cooking_app >/dev/null 2>&1; then
+  fail "expected existing-user error to be ignored"
+fi
+unset SSH_MOCK_OUTPUT SSH_MOCK_STATUS
 
 echo "ok"
