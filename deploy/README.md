@@ -46,7 +46,7 @@ make frontend-build
 docker compose -f deploy/compose.yaml up -d --build
 ```
 
-If you use `deploy/deploy.sh`, pass `--lan-https` to deploy the LAN HTTPS stack (`deploy/compose.lan.yaml`).
+`deploy/deploy.sh` defaults to the LAN HTTPS stack (`deploy/compose.lan.yaml`). Pass `--no-lan-https` to use the standard compose file (`deploy/compose.yaml`).
 
 ### LAN HTTPS (optional, no redirect)
 

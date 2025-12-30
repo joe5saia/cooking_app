@@ -119,16 +119,48 @@ List recipes:
 /tmp/cookctl recipe list --limit 25
 ```
 
+Filter recipes by tag, book name, or servings:
+
+```bash
+/tmp/cookctl recipe list --tag "Dinner"
+/tmp/cookctl recipe list --book "Weeknight"
+/tmp/cookctl recipe list --servings 4
+```
+
+Include ingredient/step counts:
+
+```bash
+/tmp/cookctl recipe list --with-counts
+```
+
 Get a recipe:
 
 ```bash
 /tmp/cookctl recipe get recipe-123
 ```
 
+Get a recipe by title (fuzzy match):
+
+```bash
+/tmp/cookctl recipe get "Red Pasta"
+```
+
 Create a recipe from JSON:
 
 ```bash
 /tmp/cookctl recipe create --file recipe.json
+```
+
+Create a recipe interactively:
+
+```bash
+/tmp/cookctl recipe create --interactive
+```
+
+Allow duplicate titles:
+
+```bash
+/tmp/cookctl recipe create --interactive --allow-duplicate
 ```
 
 Create a recipe from stdin:
@@ -141,6 +173,39 @@ Update a recipe from stdin:
 
 ```bash
 cat recipe.json | /tmp/cookctl recipe update recipe-123 --stdin
+```
+
+Generate a recipe template:
+
+```bash
+/tmp/cookctl recipe template > recipe.json
+```
+
+Export a recipe to JSON:
+
+```bash
+/tmp/cookctl recipe export recipe-123 > recipe.json
+```
+
+Import recipes from JSON:
+
+```bash
+/tmp/cookctl recipe import --file recipe.json
+cat recipe.json | /tmp/cookctl recipe import --stdin
+```
+
+Tag recipes:
+
+```bash
+/tmp/cookctl recipe tag recipe-123 Dinner Quick
+```
+
+By default, missing tags are created. Use `--no-create-missing` to require existing tags.
+
+Clone a recipe:
+
+```bash
+/tmp/cookctl recipe clone recipe-123
 ```
 
 Edit a recipe in your editor:
@@ -185,6 +250,7 @@ When `--output json` is set, API errors are emitted to stdout as JSON:
 }
 ```
 For `recipe list`, table output includes `next_cursor=<value>` when pagination is available.
+For `recipe get`, table output includes ingredients and steps in readable sections.
 
 ## Shell Completion
 Generate completion scripts:
@@ -205,4 +271,5 @@ Generate completion scripts:
 - Destructive commands require `--yes`.
 - `--debug` logs request metadata and redacts secrets.
 - Global flags (like `--output`, `--api-url`, `--timeout`, `--debug`) can appear before or after the command token (example: `/tmp/cookctl recipe list --output json`).
-- Use `cookctl help <topic>` for per-command usage; subcommands do not accept `--help`.
+- Use `--skip-health-check` to bypass the API preflight when needed.
+- Use `cookctl help <topic>` for per-command usage; subcommands also accept `--help` or `-h`.

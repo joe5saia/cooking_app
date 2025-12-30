@@ -3,25 +3,27 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: deploy/deploy.sh [--host HOST] [--ip IP] [--remote-dir DIR] [--lan-https] [--lan-https-redirect] [--reset-volumes]
+Usage: deploy/deploy.sh [--host HOST] [--ip IP] [--remote-dir DIR] [--lan-https] [--lan-https-redirect] [--no-lan-https] [--reset-volumes]
 
 Deploys the production stack in deploy/ to an Ubuntu server over SSH and verifies it via curl.
+Defaults to the LAN HTTPS stack (deploy/compose.lan.yaml).
 
 Defaults:
   HOST:       kittenserver
   IP:         192.168.88.15
   REMOTE_DIR: ~/apps/cooking_app
+  LAN_HTTPS:  true
 
 Environment variables (optional):
   POSTGRES_PASSWORD       Postgres password (auto-generated if unset)
-  COOKING_APP_DOMAIN      Caddy site address (default :80 for HTTP on LAN)
+  COOKING_APP_DOMAIN      Caddy site address (default :80 for HTTP on LAN when using deploy/compose.yaml)
   COOKING_APP_CADDYFILE   Caddyfile to use (default: Caddyfile; LAN HTTPS: Caddyfile.lan)
   COOKING_APP_LAN_IP      Server LAN IP for `Caddyfile.lan` (default: --ip)
   COOKING_APP_LAN_CADDYFILE  Caddyfile for LAN compose (default: Caddyfile.lan)
   COOKING_APP_BOOTSTRAP_USERNAME  First user username (default: admin)
   COOKING_APP_BOOTSTRAP_PASSWORD  First user password (default: sybil)
   COOKING_APP_BOOTSTRAP_DISPLAY_NAME  First user display name (default: Admin)
-  SESSION_COOKIE_SECURE   true/false (default: true with --lan-https; otherwise false when COOKING_APP_DOMAIN=:80, else true)
+  SESSION_COOKIE_SECURE   true/false (default: true for LAN HTTPS; otherwise false when COOKING_APP_DOMAIN=:80, else true)
   LOG_LEVEL               Backend log level (default info)
 EOF
 }
@@ -31,7 +33,7 @@ SERVER_IP="${SERVER_IP:-192.168.88.15}"
 REMOTE_DIR="${REMOTE_DIR:-~/apps/cooking_app}"
 SSH_OPTS=(-o BatchMode=yes -o StrictHostKeyChecking=accept-new)
 RESET_VOLUMES=0
-LAN_HTTPS=0
+LAN_HTTPS=1
 LAN_HTTPS_REDIRECT=0
 
 while [[ $# -gt 0 ]]; do
@@ -55,6 +57,11 @@ while [[ $# -gt 0 ]]; do
     --lan-https-redirect)
       LAN_HTTPS=1
       LAN_HTTPS_REDIRECT=1
+      shift 1
+      ;;
+    --no-lan-https)
+      LAN_HTTPS=0
+      LAN_HTTPS_REDIRECT=0
       shift 1
       ;;
     --reset-volumes)
@@ -139,9 +146,9 @@ COOKING_APP_BOOTSTRAP_USERNAME="${COOKING_APP_BOOTSTRAP_USERNAME:-admin}"
 COOKING_APP_BOOTSTRAP_PASSWORD="${COOKING_APP_BOOTSTRAP_PASSWORD:-sybil}"
 COOKING_APP_BOOTSTRAP_DISPLAY_NAME="${COOKING_APP_BOOTSTRAP_DISPLAY_NAME:-Admin}"
 
-compose_file_flags="-f deploy/compose.yaml"
-if [[ "$LAN_HTTPS" -eq 1 ]]; then
-  compose_file_flags="-f deploy/compose.lan.yaml"
+compose_file_flags="-f deploy/compose.lan.yaml"
+if [[ "$LAN_HTTPS" -eq 0 ]]; then
+  compose_file_flags="-f deploy/compose.yaml"
 fi
 
 if [[ "$LAN_HTTPS_REDIRECT" -eq 1 ]]; then
@@ -232,11 +239,17 @@ bootstrap_args=(
 echo "Starting API + Caddy..." >&2
 ssh "${SSH_OPTS[@]}" "$SSH_HOST" "cd '$REMOTE_DIR_RESOLVED' && docker compose --env-file .env $compose_file_flags up -d --build api caddy"
 
-echo "Waiting for HTTP health endpoint..." >&2
 health_url="http://$SERVER_IP/api/v1/healthz"
+curl_opts=(-fsS)
+if [[ "$LAN_HTTPS_REDIRECT" -eq 1 ]]; then
+  health_url="https://$SERVER_IP/api/v1/healthz"
+  curl_opts=(-fsS -k)
+fi
+
+echo "Waiting for health endpoint..." >&2
 healthy=0
 for _ in {1..60}; do
-  if curl -fsS "$health_url" >/dev/null 2>&1; then
+  if curl "${curl_opts[@]}" "$health_url" >/dev/null 2>&1; then
     healthy=1
     break
   fi
@@ -251,11 +264,15 @@ if [[ "$healthy" -ne 1 ]]; then
 fi
 
 echo "Health check:" >&2
-curl -fsS "$health_url" >&2
+curl "${curl_opts[@]}" "$health_url" >&2
 echo >&2
 
 echo "Deployed." >&2
-echo "Visit: http://$SERVER_IP/"
 if [[ "$LAN_HTTPS" -eq 1 ]]; then
   echo "Visit (requires trusting Caddy CA): https://$SERVER_IP/"
+  if [[ "$LAN_HTTPS_REDIRECT" -ne 1 ]]; then
+    echo "HTTP also available at: http://$SERVER_IP/"
+  fi
+else
+  echo "Visit: http://$SERVER_IP/"
 fi
