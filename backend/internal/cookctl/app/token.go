@@ -3,9 +3,38 @@ package app
 import (
 	"context"
 	"flag"
+	"io"
 	"strings"
 	"time"
 )
+
+type tokenCreateFlags struct {
+	name      string
+	expiresAt string
+}
+
+type tokenRevokeFlags struct {
+	yes bool
+}
+
+func tokenListFlagSet(out io.Writer) *flag.FlagSet {
+	return newFlagSet("token list", out, printTokenListUsage)
+}
+
+func tokenCreateFlagSet(out io.Writer) (*flag.FlagSet, *tokenCreateFlags) {
+	opts := &tokenCreateFlags{}
+	flags := newFlagSet("token create", out, printTokenCreateUsage)
+	flags.StringVar(&opts.name, "name", "", "Token name")
+	flags.StringVar(&opts.expiresAt, "expires-at", "", "Token expiration (RFC3339)")
+	return flags, opts
+}
+
+func tokenRevokeFlagSet(out io.Writer) (*flag.FlagSet, *tokenRevokeFlags) {
+	opts := &tokenRevokeFlags{}
+	flags := newFlagSet("token revoke", out, printTokenRevokeUsage)
+	flags.BoolVar(&opts.yes, "yes", false, "Confirm token revocation")
+	return flags, opts
+}
 
 func (a *App) runToken(args []string) int {
 	if len(args) > 0 && isHelpFlag(args[0]) {
@@ -25,7 +54,7 @@ func (a *App) runToken(args []string) int {
 	case "revoke":
 		return a.runTokenRevoke(args[1:])
 	default:
-		writef(a.stderr, "unknown token command: %s\n", args[0])
+		usageErrorf(a.stderr, "unknown token command: %s", args[0])
 		printTokenUsage(a.stderr)
 		return exitUsage
 	}
@@ -37,29 +66,17 @@ func (a *App) runTokenList(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("token list", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
+	flags := tokenListFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
-	}
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	resp, err := api.Tokens(ctx)
@@ -76,56 +93,35 @@ func (a *App) runTokenCreate(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("token create", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var name string
-	var expiresAt string
-
-	flags.StringVar(&name, "name", "", "Token name")
-	flags.StringVar(&expiresAt, "expires-at", "", "Token expiration (RFC3339)")
-
+	flags, opts := tokenCreateFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
-	name = strings.TrimSpace(name)
-	if name == "" {
-		writeLine(a.stderr, "name is required")
-		return exitUsage
+	opts.name = strings.TrimSpace(opts.name)
+	if opts.name == "" {
+		return usageError(a.stderr, "name is required")
 	}
 
 	var expiresAtTime *time.Time
-	if expiresAt != "" {
-		parsed, err := time.Parse(time.RFC3339, expiresAt)
+	if opts.expiresAt != "" {
+		parsed, err := time.Parse(time.RFC3339, opts.expiresAt)
 		if err != nil {
-			writeLine(a.stderr, "expires-at must be RFC3339")
-			return exitUsage
+			return usageError(a.stderr, "expires-at must be RFC3339")
 		}
 		expiresAtTime = &parsed
 	} else {
 		writeLine(a.stderr, "warning: token will not expire unless revoked")
 	}
 
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
-	resp, err := api.CreateToken(ctx, name, expiresAtTime)
+	resp, err := api.CreateToken(ctx, opts.name, expiresAtTime)
 	if err != nil {
 		return a.handleAPIError(err)
 	}
@@ -139,44 +135,25 @@ func (a *App) runTokenRevoke(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("token revoke", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var yes bool
-	flags.BoolVar(&yes, "yes", false, "Confirm token revocation")
-
+	flags, opts := tokenRevokeFlagSet(a.stderr)
 	id, err := parseIDArgs(flags, args)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 	if id == "" {
-		writeLine(a.stderr, "token id is required")
-		return exitUsage
+		return usageError(a.stderr, "token id is required")
 	}
-	if !yes {
-		writeLine(a.stderr, "confirmation required; re-run with --yes")
-		return exitUsage
+	if !opts.yes {
+		return usageError(a.stderr, "confirmation required; re-run with --yes")
 	}
 	id = strings.TrimSpace(id)
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	if err := api.RevokeToken(ctx, id); err != nil {

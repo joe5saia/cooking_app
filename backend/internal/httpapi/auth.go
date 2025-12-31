@@ -109,6 +109,10 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) error {
 }
 
 func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) error {
+	if _, ok := authInfoFromRequest(r); !ok {
+		return errUnauthorized("unauthorized")
+	}
+
 	hadSessionCookie := false
 	sessionDeleteFailed := false
 

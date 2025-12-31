@@ -873,3 +873,569 @@ func TestRestoreRecipe(t *testing.T) {
 		t.Fatalf("RestoreRecipe returned error: %v", err)
 	}
 }
+
+func TestItemsList(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/items" {
+			t.Fatalf("path = %s, want /api/v1/items", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("q"); got != "milk" {
+			t.Fatalf("q = %q, want milk", got)
+		}
+		if got := r.URL.Query().Get("limit"); got != "25" {
+			t.Fatalf("limit = %q, want 25", got)
+		}
+		resp := []Item{
+			{
+				ID:   "item-1",
+				Name: "milk",
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(t, w, resp)
+	}))
+	t.Cleanup(server.Close)
+
+	api, err := New(server.URL, "pat_456", 5*time.Second, false, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	resp, err := api.Items(context.Background(), ItemListParams{Query: "milk", Limit: 25})
+	if err != nil {
+		t.Fatalf("Items returned error: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("Items length = %d, want 1", len(resp))
+	}
+}
+
+func TestCreateItem(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/items" {
+			t.Fatalf("path = %s, want /api/v1/items", r.URL.Path)
+		}
+		var payload struct {
+			Name     string  `json:"name"`
+			StoreURL *string `json:"store_url"`
+			AisleID  *string `json:"aisle_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		if payload.Name != "milk" {
+			t.Fatalf("name = %q, want milk", payload.Name)
+		}
+		if payload.StoreURL == nil || *payload.StoreURL != "https://shop.example/milk" {
+			t.Fatalf("store_url = %v, want https://shop.example/milk", payload.StoreURL)
+		}
+		if payload.AisleID == nil || *payload.AisleID != "aisle-1" {
+			t.Fatalf("aisle_id = %v, want aisle-1", payload.AisleID)
+		}
+		resp := Item{ID: "item-1", Name: "milk"}
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(t, w, resp)
+	}))
+	t.Cleanup(server.Close)
+
+	api, err := New(server.URL, "pat_456", 5*time.Second, false, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	resp, err := api.CreateItem(context.Background(), "milk", stringPtr("https://shop.example/milk"), stringPtr("aisle-1"))
+	if err != nil {
+		t.Fatalf("CreateItem returned error: %v", err)
+	}
+	if resp.ID != "item-1" {
+		t.Fatalf("ID = %q, want item-1", resp.ID)
+	}
+}
+
+func TestUpdateItem(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Fatalf("method = %s, want PUT", r.Method)
+		}
+		if r.URL.Path != "/api/v1/items/item-1" {
+			t.Fatalf("path = %s, want /api/v1/items/item-1", r.URL.Path)
+		}
+		var payload struct {
+			Name     string  `json:"name"`
+			StoreURL *string `json:"store_url"`
+			AisleID  *string `json:"aisle_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		if payload.Name != "skim milk" {
+			t.Fatalf("name = %q, want skim milk", payload.Name)
+		}
+		resp := Item{ID: "item-1", Name: payload.Name}
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(t, w, resp)
+	}))
+	t.Cleanup(server.Close)
+
+	api, err := New(server.URL, "pat_456", 5*time.Second, false, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	resp, err := api.UpdateItem(context.Background(), "item-1", "skim milk", nil, nil)
+	if err != nil {
+		t.Fatalf("UpdateItem returned error: %v", err)
+	}
+	if resp.Name != "skim milk" {
+		t.Fatalf("Name = %q, want skim milk", resp.Name)
+	}
+}
+
+func TestDeleteItem(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Fatalf("method = %s, want DELETE", r.Method)
+		}
+		if r.URL.Path != "/api/v1/items/item-1" {
+			t.Fatalf("path = %s, want /api/v1/items/item-1", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+
+	api, err := New(server.URL, "pat_456", 5*time.Second, false, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	if err := api.DeleteItem(context.Background(), "item-1"); err != nil {
+		t.Fatalf("DeleteItem returned error: %v", err)
+	}
+}
+
+func TestShoppingLists(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/shopping-lists" {
+			t.Fatalf("path = %s, want /api/v1/shopping-lists", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("start"); got != "2025-02-01" {
+			t.Fatalf("start = %q, want 2025-02-01", got)
+		}
+		if got := r.URL.Query().Get("end"); got != "2025-02-28" {
+			t.Fatalf("end = %q, want 2025-02-28", got)
+		}
+		resp := []ShoppingList{
+			{
+				ID:        "list-1",
+				ListDate:  "2025-02-01",
+				Name:      "Weekly",
+				CreatedAt: time.Date(2025, 2, 1, 12, 0, 0, 0, time.UTC),
+				UpdatedAt: time.Date(2025, 2, 1, 12, 0, 0, 0, time.UTC),
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(t, w, resp)
+	}))
+	t.Cleanup(server.Close)
+
+	api, err := New(server.URL, "pat_456", 5*time.Second, false, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	resp, err := api.ShoppingLists(context.Background(), "2025-02-01", "2025-02-28")
+	if err != nil {
+		t.Fatalf("ShoppingLists returned error: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("ShoppingLists length = %d, want 1", len(resp))
+	}
+}
+
+func TestCreateShoppingList(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/shopping-lists" {
+			t.Fatalf("path = %s, want /api/v1/shopping-lists", r.URL.Path)
+		}
+		var payload struct {
+			ListDate string  `json:"list_date"`
+			Name     string  `json:"name"`
+			Notes    *string `json:"notes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		if payload.ListDate != "2025-02-03" {
+			t.Fatalf("list_date = %q, want 2025-02-03", payload.ListDate)
+		}
+		if payload.Name != "Weekly" {
+			t.Fatalf("name = %q, want Weekly", payload.Name)
+		}
+		resp := ShoppingList{
+			ID:        "list-1",
+			ListDate:  payload.ListDate,
+			Name:      payload.Name,
+			CreatedAt: time.Date(2025, 2, 3, 12, 0, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2025, 2, 3, 12, 0, 0, 0, time.UTC),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(t, w, resp)
+	}))
+	t.Cleanup(server.Close)
+
+	api, err := New(server.URL, "pat_456", 5*time.Second, false, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	resp, err := api.CreateShoppingList(context.Background(), "2025-02-03", "Weekly", nil)
+	if err != nil {
+		t.Fatalf("CreateShoppingList returned error: %v", err)
+	}
+	if resp.ID != "list-1" {
+		t.Fatalf("ID = %q, want list-1", resp.ID)
+	}
+}
+
+func TestShoppingList(t *testing.T) {
+	t.Parallel()
+
+	const shoppingListPath = "/api/v1/shopping-lists/list-1"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != shoppingListPath {
+			t.Fatalf("path = %s, want %s", r.URL.Path, shoppingListPath)
+		}
+		resp := ShoppingListDetail{
+			ID:       "list-1",
+			ListDate: "2025-02-03",
+			Name:     "Weekly",
+			Items: []ShoppingListItem{
+				{
+					ID:   "item-1",
+					Item: Item{ID: "item-1", Name: "milk"},
+				},
+			},
+			CreatedAt: time.Date(2025, 2, 3, 12, 0, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2025, 2, 3, 12, 0, 0, 0, time.UTC),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(t, w, resp)
+	}))
+	t.Cleanup(server.Close)
+
+	api, err := New(server.URL, "pat_456", 5*time.Second, false, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	resp, err := api.ShoppingList(context.Background(), "list-1")
+	if err != nil {
+		t.Fatalf("ShoppingList returned error: %v", err)
+	}
+	if resp.ID != "list-1" {
+		t.Fatalf("ID = %q, want list-1", resp.ID)
+	}
+}
+
+func TestUpdateShoppingList(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Fatalf("method = %s, want PUT", r.Method)
+		}
+		if r.URL.Path != "/api/v1/shopping-lists/list-1" {
+			t.Fatalf("path = %s, want /api/v1/shopping-lists/list-1", r.URL.Path)
+		}
+		var payload struct {
+			ListDate string  `json:"list_date"`
+			Name     string  `json:"name"`
+			Notes    *string `json:"notes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		resp := ShoppingList{
+			ID:        "list-1",
+			ListDate:  payload.ListDate,
+			Name:      payload.Name,
+			CreatedAt: time.Date(2025, 2, 3, 12, 0, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2025, 2, 4, 12, 0, 0, 0, time.UTC),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(t, w, resp)
+	}))
+	t.Cleanup(server.Close)
+
+	api, err := New(server.URL, "pat_456", 5*time.Second, false, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	resp, err := api.UpdateShoppingList(context.Background(), "list-1", "2025-02-04", "Updated", nil)
+	if err != nil {
+		t.Fatalf("UpdateShoppingList returned error: %v", err)
+	}
+	if resp.Name != "Updated" {
+		t.Fatalf("Name = %q, want Updated", resp.Name)
+	}
+}
+
+func TestDeleteShoppingList(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Fatalf("method = %s, want DELETE", r.Method)
+		}
+		if r.URL.Path != "/api/v1/shopping-lists/list-1" {
+			t.Fatalf("path = %s, want /api/v1/shopping-lists/list-1", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+
+	api, err := New(server.URL, "pat_456", 5*time.Second, false, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	if err := api.DeleteShoppingList(context.Background(), "list-1"); err != nil {
+		t.Fatalf("DeleteShoppingList returned error: %v", err)
+	}
+}
+
+func TestShoppingListItems(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/shopping-lists/list-1/items" {
+			t.Fatalf("path = %s, want /api/v1/shopping-lists/list-1/items", r.URL.Path)
+		}
+		resp := []ShoppingListItem{
+			{
+				ID:   "item-1",
+				Item: Item{ID: "item-1", Name: "milk"},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(t, w, resp)
+	}))
+	t.Cleanup(server.Close)
+
+	api, err := New(server.URL, "pat_456", 5*time.Second, false, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	resp, err := api.ShoppingListItems(context.Background(), "list-1")
+	if err != nil {
+		t.Fatalf("ShoppingListItems returned error: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("ShoppingListItems length = %d, want 1", len(resp))
+	}
+}
+
+func TestAddShoppingListItems(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/shopping-lists/list-1/items" {
+			t.Fatalf("path = %s, want /api/v1/shopping-lists/list-1/items", r.URL.Path)
+		}
+		var payload struct {
+			Items []ShoppingListItemInput `json:"items"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		if len(payload.Items) != 1 || payload.Items[0].ItemID != "item-1" {
+			t.Fatalf("items = %+v, want item-1", payload.Items)
+		}
+		resp := []ShoppingListItem{
+			{
+				ID:   "list-item-1",
+				Item: Item{ID: "item-1", Name: "milk"},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(t, w, resp)
+	}))
+	t.Cleanup(server.Close)
+
+	api, err := New(server.URL, "pat_456", 5*time.Second, false, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	_, err = api.AddShoppingListItems(context.Background(), "list-1", []ShoppingListItemInput{{ItemID: "item-1"}})
+	if err != nil {
+		t.Fatalf("AddShoppingListItems returned error: %v", err)
+	}
+}
+
+func TestAddShoppingListItemsFromRecipes(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/shopping-lists/list-1/items/from-recipes" {
+			t.Fatalf("path = %s, want /api/v1/shopping-lists/list-1/items/from-recipes", r.URL.Path)
+		}
+		var payload struct {
+			RecipeIDs []string `json:"recipe_ids"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		if len(payload.RecipeIDs) != 2 {
+			t.Fatalf("recipe_ids length = %d, want 2", len(payload.RecipeIDs))
+		}
+		resp := []ShoppingListItem{{ID: "list-item-1", Item: Item{ID: "item-1", Name: "milk"}}}
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(t, w, resp)
+	}))
+	t.Cleanup(server.Close)
+
+	api, err := New(server.URL, "pat_456", 5*time.Second, false, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	_, err = api.AddShoppingListItemsFromRecipes(context.Background(), "list-1", []string{"recipe-1", "recipe-2"})
+	if err != nil {
+		t.Fatalf("AddShoppingListItemsFromRecipes returned error: %v", err)
+	}
+}
+
+func TestAddShoppingListItemsFromMealPlan(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		if r.URL.Path != "/api/v1/shopping-lists/list-1/items/from-meal-plan" {
+			t.Fatalf("path = %s, want /api/v1/shopping-lists/list-1/items/from-meal-plan", r.URL.Path)
+		}
+		var payload struct {
+			Date string `json:"date"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		if payload.Date != "2025-02-10" {
+			t.Fatalf("date = %q, want 2025-02-10", payload.Date)
+		}
+		resp := []ShoppingListItem{{ID: "list-item-1", Item: Item{ID: "item-1", Name: "milk"}}}
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(t, w, resp)
+	}))
+	t.Cleanup(server.Close)
+
+	api, err := New(server.URL, "pat_456", 5*time.Second, false, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	_, err = api.AddShoppingListItemsFromMealPlan(context.Background(), "list-1", "2025-02-10")
+	if err != nil {
+		t.Fatalf("AddShoppingListItemsFromMealPlan returned error: %v", err)
+	}
+}
+
+func TestUpdateShoppingListItemPurchase(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Fatalf("method = %s, want PATCH", r.Method)
+		}
+		if r.URL.Path != "/api/v1/shopping-lists/list-1/items/item-1" {
+			t.Fatalf("path = %s, want /api/v1/shopping-lists/list-1/items/item-1", r.URL.Path)
+		}
+		var payload struct {
+			IsPurchased bool `json:"is_purchased"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode payload: %v", err)
+		}
+		if !payload.IsPurchased {
+			t.Fatalf("is_purchased = false, want true")
+		}
+		resp := ShoppingListItem{
+			ID:          "list-item-1",
+			Item:        Item{ID: "item-1", Name: "milk"},
+			IsPurchased: true,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		writeJSON(t, w, resp)
+	}))
+	t.Cleanup(server.Close)
+
+	api, err := New(server.URL, "pat_456", 5*time.Second, false, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	resp, err := api.UpdateShoppingListItemPurchase(context.Background(), "list-1", "item-1", true)
+	if err != nil {
+		t.Fatalf("UpdateShoppingListItemPurchase returned error: %v", err)
+	}
+	if !resp.IsPurchased {
+		t.Fatalf("IsPurchased = false, want true")
+	}
+}
+
+func TestDeleteShoppingListItem(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Fatalf("method = %s, want DELETE", r.Method)
+		}
+		if r.URL.Path != "/api/v1/shopping-lists/list-1/items/item-1" {
+			t.Fatalf("path = %s, want /api/v1/shopping-lists/list-1/items/item-1", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(server.Close)
+
+	api, err := New(server.URL, "pat_456", 5*time.Second, false, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+
+	if err := api.DeleteShoppingListItem(context.Background(), "list-1", "item-1"); err != nil {
+		t.Fatalf("DeleteShoppingListItem returned error: %v", err)
+	}
+}
+
+func stringPtr(value string) *string {
+	return &value
+}

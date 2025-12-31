@@ -18,15 +18,15 @@ type recipeTagResponse struct {
 }
 
 type recipeIngredientResponse struct {
-	ID           string   `json:"id"`
-	Position     int      `json:"position"`
-	Quantity     *float64 `json:"quantity"`
-	QuantityText *string  `json:"quantity_text"`
-	Unit         *string  `json:"unit"`
-	Item         string   `json:"item"`
-	Prep         *string  `json:"prep"`
-	Notes        *string  `json:"notes"`
-	OriginalText *string  `json:"original_text"`
+	ID           string       `json:"id"`
+	Position     int          `json:"position"`
+	Quantity     *float64     `json:"quantity"`
+	QuantityText *string      `json:"quantity_text"`
+	Unit         *string      `json:"unit"`
+	Item         itemResponse `json:"item"`
+	Prep         *string      `json:"prep"`
+	Notes        *string      `json:"notes"`
+	OriginalText *string      `json:"original_text"`
 }
 
 type recipeStepResponse struct {
@@ -150,7 +150,18 @@ func (a *App) loadRecipeDetail(ctx context.Context, id pgtype.UUID) (recipeDetai
 			Quantity:     quantity,
 			QuantityText: textStringPtr(ing.QuantityText),
 			Unit:         textStringPtr(ing.Unit),
-			Item:         ing.Item,
+			Item: itemResponse{
+				ID:       uuidString(ing.ItemID),
+				Name:     ing.ItemName,
+				StoreURL: textStringPtr(ing.ItemStoreUrl),
+				Aisle: buildAisleResponse(
+					ing.ItemAisleID,
+					ing.AisleName,
+					ing.AisleSortGroup,
+					ing.AisleSortOrder,
+					ing.AisleNumericValue,
+				),
+			},
 			Prep:         textStringPtr(ing.Prep),
 			Notes:        textStringPtr(ing.Notes),
 			OriginalText: textStringPtr(ing.OriginalText),

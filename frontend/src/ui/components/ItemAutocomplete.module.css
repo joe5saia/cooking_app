@@ -1,0 +1,53 @@
+.wrapper {
+  position: relative;
+}
+
+.panel {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  margin-top: 6px;
+  padding: 6px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-2);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.22);
+  display: grid;
+  gap: 4px;
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.option:hover,
+.option:focus-visible {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-1);
+}
+
+.optionName {
+  font-weight: 500;
+}
+
+.optionMeta {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.status {
+  padding: 6px 10px;
+  font-size: 12px;
+  opacity: 0.75;
+}

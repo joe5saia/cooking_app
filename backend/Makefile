@@ -8,6 +8,9 @@ GOLANGCI_LINT := $(BIN_DIR)/golangci-lint
 GOIMPORTS := $(BIN_DIR)/goimports
 GOOSE := $(BIN_DIR)/goose
 SQLC := $(BIN_DIR)/sqlc
+AST_GREP := npx -y --package @ast-grep/cli ast-grep
+AST_GREP_CONFIG := $(CURDIR)/sgconfig.yml
+AST_GREP_TARGET := $(CURDIR)/internal/httpapi
 MIGRATIONS_DIR := $(CURDIR)/migrations
 GOFILES := $(shell find . -name '*.go' -not -path "./vendor/*" -not -path "./.git/*" -not -path "./bin/*")
 COOKCTL_OUT ?= $(BIN_DIR)/cookctl
@@ -16,7 +19,7 @@ COOKCTL_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown
 COOKCTL_BUILT_AT ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 COOKCTL_LDFLAGS := -X github.com/saiaj/cooking_app/backend/internal/cookctl/app.Version=$(COOKCTL_VERSION) -X github.com/saiaj/cooking_app/backend/internal/cookctl/app.Commit=$(COOKCTL_COMMIT) -X github.com/saiaj/cooking_app/backend/internal/cookctl/app.BuiltAt=$(COOKCTL_BUILT_AT)
 
-.PHONY: fmt lint test vet tidy ci tools clean
+.PHONY: fmt lint test vet tidy ci tools clean ast-grep
 .PHONY: schema-generate schema-check
 .PHONY: run-api
 .PHONY: cookctl-build
@@ -37,6 +40,10 @@ schema-check:
 lint:
 	@$(MAKE) tools
 	@$(GOLANGCI_LINT) run ./...
+	@$(MAKE) ast-grep
+
+ast-grep:
+	@$(AST_GREP) scan -c $(AST_GREP_CONFIG) $(AST_GREP_TARGET) --error
 
 test:
 	@$(GO) test ./...

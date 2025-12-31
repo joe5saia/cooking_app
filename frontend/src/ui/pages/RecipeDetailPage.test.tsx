@@ -45,6 +45,13 @@ describe('RecipeDetailPage', () => {
           )
         }
 
+        if (url.includes('/api/v1/shopping-lists') && method === 'GET') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+
         if (url.endsWith('/api/v1/recipes/r1') && method === 'GET') {
           await Promise.resolve()
           return new Response(
@@ -65,7 +72,12 @@ describe('RecipeDetailPage', () => {
                   quantity: 1,
                   quantity_text: '1',
                   unit: 'lb',
-                  item: 'chicken',
+                  item: {
+                    id: 'item-1',
+                    name: 'chicken',
+                    store_url: null,
+                    aisle: null,
+                  },
                   prep: null,
                   notes: 'Organic',
                   original_text: '1 lb chicken',
@@ -90,7 +102,9 @@ describe('RecipeDetailPage', () => {
     expect(screen.getByText(/loading/i)).toBeVisible()
 
     expect(await screen.findByText('Chicken Soup')).toBeVisible()
-    expect(await screen.findByText(/ingredients/i)).toBeVisible()
+    expect(
+      await screen.findByRole('heading', { name: /ingredients/i, level: 3 }),
+    ).toBeVisible()
     expect(
       await screen.findByText(/1 lb chicken — organic \[1 lb chicken\]/i),
     ).toBeVisible()
@@ -120,6 +134,13 @@ describe('RecipeDetailPage', () => {
             ]),
             { status: 200, headers: { 'content-type': 'application/json' } },
           )
+        }
+
+        if (url.includes('/api/v1/shopping-lists') && method === 'GET') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
         }
 
         if (url.endsWith('/api/v1/recipes/r1') && method === 'GET') {
@@ -176,6 +197,12 @@ describe('RecipeDetailPage', () => {
             { status: 404, headers: { 'content-type': 'application/json' } },
           )
         }
+        if (url.includes('/api/v1/shopping-lists')) {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
         return new Response(null, { status: 404 })
       }),
     )
@@ -194,6 +221,12 @@ describe('RecipeDetailPage', () => {
             JSON.stringify({ code: 'internal_error', message: 'boom' }),
             { status: 500, headers: { 'content-type': 'application/json' } },
           )
+        }
+        if (url.includes('/api/v1/shopping-lists')) {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
         }
         return new Response(null, { status: 404 })
       }),
@@ -249,6 +282,12 @@ describe('RecipeDetailPage', () => {
             JSON.stringify({ items: [], next_cursor: null }),
             { status: 200, headers: { 'content-type': 'application/json' } },
           )
+        }
+        if (url.includes('/api/v1/shopping-lists') && method === 'GET') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
         }
 
         return new Response(null, { status: 404 })
@@ -315,6 +354,13 @@ describe('RecipeDetailPage', () => {
           )
         }
 
+        if (url.includes('/api/v1/shopping-lists') && method === 'GET') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+
         return new Response(null, { status: 404 })
       }),
     )
@@ -378,6 +424,13 @@ describe('RecipeDetailPage', () => {
           )
         }
 
+        if (url.includes('/api/v1/shopping-lists') && method === 'GET') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+
         return new Response(null, { status: 404 })
       }),
     )
@@ -429,6 +482,13 @@ describe('RecipeDetailPage', () => {
             JSON.stringify({ code: 'internal_error', message: 'boom' }),
             { status: 500, headers: { 'content-type': 'application/json' } },
           )
+        }
+
+        if (url.includes('/api/v1/shopping-lists') && method === 'GET') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
         }
 
         return new Response(null, { status: 404 })

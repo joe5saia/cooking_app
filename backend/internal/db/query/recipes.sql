@@ -21,10 +21,33 @@ FROM recipes
 WHERE id = $1;
 
 -- name: ListRecipeIngredientsByRecipeID :many
-SELECT *
-FROM recipe_ingredients
-WHERE recipe_id = $1
-ORDER BY position ASC;
+SELECT
+  ri.id,
+  ri.recipe_id,
+  ri.position,
+  ri.quantity,
+  ri.quantity_text,
+  ri.unit,
+  ri.item_id,
+  i.name AS item_name,
+  i.store_url AS item_store_url,
+  i.aisle_id AS item_aisle_id,
+  a.name AS aisle_name,
+  a.sort_group AS aisle_sort_group,
+  a.sort_order AS aisle_sort_order,
+  a.numeric_value AS aisle_numeric_value,
+  ri.prep,
+  ri.notes,
+  ri.original_text,
+  ri.created_at,
+  ri.created_by,
+  ri.updated_at,
+  ri.updated_by
+FROM recipe_ingredients ri
+JOIN items i ON i.id = ri.item_id
+LEFT JOIN grocery_aisles a ON a.id = i.aisle_id
+WHERE ri.recipe_id = $1
+ORDER BY ri.position ASC;
 
 -- name: ListRecipeStepsByRecipeID :many
 SELECT *
@@ -48,7 +71,7 @@ INSERT INTO recipe_ingredients (
   quantity,
   quantity_text,
   unit,
-  item,
+  item_id,
   prep,
   notes,
   original_text,

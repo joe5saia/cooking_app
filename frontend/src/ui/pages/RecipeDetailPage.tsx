@@ -5,15 +5,28 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ApiError } from '../../api/client'
 import { deleteRecipe, getRecipe, restoreRecipe } from '../../api/recipes'
 import { listRecipeBooks } from '../../api/recipeBooks'
+import {
+  addShoppingListItemsFromRecipes,
+  listShoppingLists,
+} from '../../api/shoppingLists'
 
 import styles from './CrudList.module.css'
 import { Page } from './Page'
+
+function formatDate(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 export function RecipeDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [actionError, setActionError] = useState<string | null>(null)
+  const [listNotice, setListNotice] = useState<string | null>(null)
+  const [selectedListID, setSelectedListID] = useState('')
 
   const recipeQuery = useQuery({
     queryKey: ['recipes', 'detail', id],
@@ -25,6 +38,24 @@ export function RecipeDetailPage() {
   const booksQuery = useQuery({
     queryKey: ['recipe-books'],
     queryFn: listRecipeBooks,
+  })
+
+  const today = useMemo(() => new Date(), [])
+  const range = useMemo(
+    () => ({
+      start: formatDate(
+        new Date(today.getFullYear(), today.getMonth(), today.getDate() - 14),
+      ),
+      end: formatDate(
+        new Date(today.getFullYear(), today.getMonth(), today.getDate() + 45),
+      ),
+    }),
+    [today],
+  )
+
+  const listsQuery = useQuery({
+    queryKey: ['shopping-lists', 'recipe', range.start, range.end],
+    queryFn: () => listShoppingLists({ start: range.start, end: range.end }),
   })
 
   const deleteMutation = useMutation({
@@ -56,6 +87,19 @@ export function RecipeDetailPage() {
     },
     onError: (e) => {
       setActionError(e instanceof ApiError ? e.message : 'Failed to restore.')
+    },
+  })
+
+  const addToListMutation = useMutation({
+    mutationFn: (params: { listID: string; recipeID: string }) =>
+      addShoppingListItemsFromRecipes(params.listID, [params.recipeID]),
+    onSuccess: () => {
+      setListNotice('Added ingredients to the shopping list.')
+    },
+    onError: (e) => {
+      setListNotice(
+        e instanceof ApiError ? e.message : 'Failed to add to shopping list.',
+      )
     },
   })
 
@@ -235,6 +279,65 @@ export function RecipeDetailPage() {
               )}
             </div>
 
+            {!recipe.deleted_at ? (
+              <div className={styles.section}>
+                <h3>Add to shopping list</h3>
+                {listsQuery.isError ? (
+                  <div role="alert" className={styles.alert}>
+                    Unable to load shopping lists.
+                  </div>
+                ) : null}
+                <div className={styles.row}>
+                  <select
+                    className={styles.input}
+                    value={selectedListID}
+                    onChange={(event) => {
+                      setSelectedListID(event.target.value)
+                      setListNotice(null)
+                    }}
+                    disabled={listsQuery.isPending}
+                  >
+                    <option value="">Select a list</option>
+                    {(listsQuery.data ?? []).map((list) => (
+                      <option key={list.id} value={list.id}>
+                        {list.name} • {list.list_date}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className={styles.button}
+                    type="button"
+                    disabled={
+                      addToListMutation.isPending || selectedListID === ''
+                    }
+                    onClick={() => {
+                      if (!selectedListID) return
+                      addToListMutation.mutate({
+                        listID: selectedListID,
+                        recipeID: recipe.id,
+                      })
+                    }}
+                  >
+                    {addToListMutation.isPending
+                      ? 'Adding…'
+                      : 'Add ingredients'}
+                  </button>
+                  <Link className={styles.button} to="/shopping-lists">
+                    Manage lists
+                  </Link>
+                </div>
+                {listNotice ? (
+                  <div className={styles.muted}>{listNotice}</div>
+                ) : null}
+                {!listsQuery.isPending &&
+                (listsQuery.data ?? []).length === 0 ? (
+                  <div className={styles.muted}>
+                    No lists in the current date window.
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
             <div>
               <h3>Steps</h3>
               {recipe.steps.length ? (
@@ -258,7 +361,7 @@ function formatIngredient(ing: {
   quantity: number | null
   quantity_text: string | null
   unit: string | null
-  item: string
+  item: { name: string }
   prep: string | null
   notes: string | null
   original_text: string | null
@@ -267,7 +370,8 @@ function formatIngredient(ing: {
   if (ing.quantity_text?.trim()) pieces.push(ing.quantity_text.trim())
   else if (typeof ing.quantity === 'number') pieces.push(String(ing.quantity))
   if (ing.unit?.trim()) pieces.push(ing.unit.trim())
-  pieces.push(ing.item)
+  const itemName = ing.item.name.trim()
+  if (itemName) pieces.push(itemName)
   if (ing.prep?.trim()) pieces.push(`(${ing.prep.trim()})`)
   if (ing.notes?.trim()) pieces.push(`— ${ing.notes.trim()}`)
   if (ing.original_text?.trim()) pieces.push(`[${ing.original_text.trim()}]`)

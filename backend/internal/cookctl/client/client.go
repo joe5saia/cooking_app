@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -81,6 +82,55 @@ type RecipeTag struct {
 	Name string `json:"name"`
 }
 
+// GroceryAisle represents aisle ordering metadata for shopping organization.
+type GroceryAisle struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	SortGroup    int    `json:"sort_group"`
+	SortOrder    int    `json:"sort_order"`
+	NumericValue *int   `json:"numeric_value"`
+}
+
+// Item represents a structured ingredient item.
+type Item struct {
+	ID       string        `json:"id"`
+	Name     string        `json:"name"`
+	StoreURL *string       `json:"store_url"`
+	Aisle    *GroceryAisle `json:"aisle"`
+}
+
+// ShoppingList represents a shopping list summary.
+type ShoppingList struct {
+	ID        string    `json:"id"`
+	ListDate  string    `json:"list_date"`
+	Name      string    `json:"name"`
+	Notes     *string   `json:"notes"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ShoppingListItem represents an item on a shopping list.
+type ShoppingListItem struct {
+	ID           string     `json:"id"`
+	Item         Item       `json:"item"`
+	Quantity     *float64   `json:"quantity"`
+	QuantityText *string    `json:"quantity_text"`
+	Unit         *string    `json:"unit"`
+	IsPurchased  bool       `json:"is_purchased"`
+	PurchasedAt  *time.Time `json:"purchased_at"`
+}
+
+// ShoppingListDetail represents a shopping list with its items.
+type ShoppingListDetail struct {
+	ID        string             `json:"id"`
+	ListDate  string             `json:"list_date"`
+	Name      string             `json:"name"`
+	Notes     *string            `json:"notes"`
+	Items     []ShoppingListItem `json:"items"`
+	CreatedAt time.Time          `json:"created_at"`
+	UpdatedAt time.Time          `json:"updated_at"`
+}
+
 // RecipeListItem is a summary of a recipe for list responses.
 type RecipeListItem struct {
 	ID               string      `json:"id"`
@@ -103,7 +153,7 @@ type RecipeIngredient struct {
 	Quantity     *float64 `json:"quantity"`
 	QuantityText *string  `json:"quantity_text"`
 	Unit         *string  `json:"unit"`
-	Item         string   `json:"item"`
+	Item         Item     `json:"item"`
 	Prep         *string  `json:"prep"`
 	Notes        *string  `json:"notes"`
 	OriginalText *string  `json:"original_text"`
@@ -167,6 +217,20 @@ type RecipeListParams struct {
 	IncludeDeleted bool
 	Limit          int
 	Cursor         string
+}
+
+// ItemListParams defines optional filters for listing items.
+type ItemListParams struct {
+	Query string
+	Limit int
+}
+
+// ShoppingListItemInput represents a list item payload for adds.
+type ShoppingListItemInput struct {
+	ItemID       string   `json:"item_id"`
+	Quantity     *float64 `json:"quantity,omitempty"`
+	QuantityText *string  `json:"quantity_text,omitempty"`
+	Unit         *string  `json:"unit,omitempty"`
 }
 
 // Problem matches the API error response format.
@@ -438,7 +502,7 @@ func (c *Client) Recipes(ctx context.Context, params RecipeListParams) (RecipeLi
 	}
 
 	var out RecipeListResponse
-	if err := c.doJSONWithQuery(ctx, http.MethodGet, "/api/v1/recipes", query, nil, &out); err != nil {
+	if err := c.doJSONWithQuery(ctx, "/api/v1/recipes", query, &out); err != nil {
 		return RecipeListResponse{}, err
 	}
 	return out, nil
@@ -451,7 +515,7 @@ func (c *Client) MealPlans(ctx context.Context, start, end string) (MealPlanList
 	query.Set("end", end)
 
 	var out MealPlanListResponse
-	if err := c.doJSONWithQuery(ctx, http.MethodGet, "/api/v1/meal-plans", query, nil, &out); err != nil {
+	if err := c.doJSONWithQuery(ctx, "/api/v1/meal-plans", query, &out); err != nil {
 		return MealPlanListResponse{}, err
 	}
 	return out, nil
@@ -477,6 +541,206 @@ func (c *Client) CreateMealPlan(ctx context.Context, date, recipeID string) (Mea
 // DeleteMealPlan removes a recipe from the meal plan on the given date.
 func (c *Client) DeleteMealPlan(ctx context.Context, date, recipeID string) error {
 	path := fmt.Sprintf("/api/v1/meal-plans/%s/%s", url.PathEscape(date), url.PathEscape(recipeID))
+	return c.doJSON(ctx, http.MethodDelete, path, nil, nil)
+}
+
+// Items lists items with optional filters.
+func (c *Client) Items(ctx context.Context, params ItemListParams) ([]Item, error) {
+	query := url.Values{}
+	if params.Query != "" {
+		query.Set("q", params.Query)
+	}
+	if params.Limit > 0 {
+		query.Set("limit", strconv.Itoa(params.Limit))
+	}
+	var out []Item
+	if err := c.doJSONWithQuery(ctx, "/api/v1/items", query, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// CreateItem creates a new item.
+func (c *Client) CreateItem(ctx context.Context, name string, storeURL *string, aisleID *string) (Item, error) {
+	payload := struct {
+		Name     string  `json:"name"`
+		StoreURL *string `json:"store_url"`
+		AisleID  *string `json:"aisle_id"`
+	}{
+		Name:     name,
+		StoreURL: storeURL,
+		AisleID:  aisleID,
+	}
+	var out Item
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/items", payload, &out); err != nil {
+		return Item{}, err
+	}
+	return out, nil
+}
+
+// UpdateItem updates an existing item by id.
+func (c *Client) UpdateItem(ctx context.Context, id, name string, storeURL *string, aisleID *string) (Item, error) {
+	payload := struct {
+		Name     string  `json:"name"`
+		StoreURL *string `json:"store_url"`
+		AisleID  *string `json:"aisle_id"`
+	}{
+		Name:     name,
+		StoreURL: storeURL,
+		AisleID:  aisleID,
+	}
+	path := fmt.Sprintf("/api/v1/items/%s", url.PathEscape(id))
+	var out Item
+	if err := c.doJSON(ctx, http.MethodPut, path, payload, &out); err != nil {
+		return Item{}, err
+	}
+	return out, nil
+}
+
+// DeleteItem deletes an item by id.
+func (c *Client) DeleteItem(ctx context.Context, id string) error {
+	path := fmt.Sprintf("/api/v1/items/%s", url.PathEscape(id))
+	return c.doJSON(ctx, http.MethodDelete, path, nil, nil)
+}
+
+// ShoppingLists lists shopping lists within a date range.
+func (c *Client) ShoppingLists(ctx context.Context, start, end string) ([]ShoppingList, error) {
+	query := url.Values{}
+	query.Set("start", start)
+	query.Set("end", end)
+	var out []ShoppingList
+	if err := c.doJSONWithQuery(ctx, "/api/v1/shopping-lists", query, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// CreateShoppingList creates a new shopping list.
+func (c *Client) CreateShoppingList(ctx context.Context, listDate, name string, notes *string) (ShoppingList, error) {
+	payload := struct {
+		ListDate string  `json:"list_date"`
+		Name     string  `json:"name"`
+		Notes    *string `json:"notes"`
+	}{
+		ListDate: listDate,
+		Name:     name,
+		Notes:    notes,
+	}
+	var out ShoppingList
+	if err := c.doJSON(ctx, http.MethodPost, "/api/v1/shopping-lists", payload, &out); err != nil {
+		return ShoppingList{}, err
+	}
+	return out, nil
+}
+
+// ShoppingList returns a shopping list by id.
+func (c *Client) ShoppingList(ctx context.Context, id string) (ShoppingListDetail, error) {
+	path := fmt.Sprintf("/api/v1/shopping-lists/%s", url.PathEscape(id))
+	var out ShoppingListDetail
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return ShoppingListDetail{}, err
+	}
+	return out, nil
+}
+
+// UpdateShoppingList updates a shopping list by id.
+func (c *Client) UpdateShoppingList(ctx context.Context, id, listDate, name string, notes *string) (ShoppingList, error) {
+	payload := struct {
+		ListDate string  `json:"list_date"`
+		Name     string  `json:"name"`
+		Notes    *string `json:"notes"`
+	}{
+		ListDate: listDate,
+		Name:     name,
+		Notes:    notes,
+	}
+	path := fmt.Sprintf("/api/v1/shopping-lists/%s", url.PathEscape(id))
+	var out ShoppingList
+	if err := c.doJSON(ctx, http.MethodPut, path, payload, &out); err != nil {
+		return ShoppingList{}, err
+	}
+	return out, nil
+}
+
+// DeleteShoppingList deletes a shopping list by id.
+func (c *Client) DeleteShoppingList(ctx context.Context, id string) error {
+	path := fmt.Sprintf("/api/v1/shopping-lists/%s", url.PathEscape(id))
+	return c.doJSON(ctx, http.MethodDelete, path, nil, nil)
+}
+
+// ShoppingListItems lists shopping list items.
+func (c *Client) ShoppingListItems(ctx context.Context, listID string) ([]ShoppingListItem, error) {
+	path := fmt.Sprintf("/api/v1/shopping-lists/%s/items", url.PathEscape(listID))
+	var out []ShoppingListItem
+	if err := c.doJSON(ctx, http.MethodGet, path, nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AddShoppingListItems adds explicit items to a shopping list.
+func (c *Client) AddShoppingListItems(ctx context.Context, listID string, items []ShoppingListItemInput) ([]ShoppingListItem, error) {
+	payload := struct {
+		Items []ShoppingListItemInput `json:"items"`
+	}{
+		Items: items,
+	}
+	path := fmt.Sprintf("/api/v1/shopping-lists/%s/items", url.PathEscape(listID))
+	var out []ShoppingListItem
+	if err := c.doJSON(ctx, http.MethodPost, path, payload, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AddShoppingListItemsFromRecipes adds items from recipes to a shopping list.
+func (c *Client) AddShoppingListItemsFromRecipes(ctx context.Context, listID string, recipeIDs []string) ([]ShoppingListItem, error) {
+	payload := struct {
+		RecipeIDs []string `json:"recipe_ids"`
+	}{
+		RecipeIDs: recipeIDs,
+	}
+	path := fmt.Sprintf("/api/v1/shopping-lists/%s/items/from-recipes", url.PathEscape(listID))
+	var out []ShoppingListItem
+	if err := c.doJSON(ctx, http.MethodPost, path, payload, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AddShoppingListItemsFromMealPlan adds items from a meal plan date.
+func (c *Client) AddShoppingListItemsFromMealPlan(ctx context.Context, listID, date string) ([]ShoppingListItem, error) {
+	payload := struct {
+		Date string `json:"date"`
+	}{
+		Date: date,
+	}
+	path := fmt.Sprintf("/api/v1/shopping-lists/%s/items/from-meal-plan", url.PathEscape(listID))
+	var out []ShoppingListItem
+	if err := c.doJSON(ctx, http.MethodPost, path, payload, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// UpdateShoppingListItemPurchase updates purchase state for a list item.
+func (c *Client) UpdateShoppingListItemPurchase(ctx context.Context, listID, itemID string, isPurchased bool) (ShoppingListItem, error) {
+	payload := struct {
+		IsPurchased bool `json:"is_purchased"`
+	}{
+		IsPurchased: isPurchased,
+	}
+	path := fmt.Sprintf("/api/v1/shopping-lists/%s/items/%s", url.PathEscape(listID), url.PathEscape(itemID))
+	var out ShoppingListItem
+	if err := c.doJSON(ctx, http.MethodPatch, path, payload, &out); err != nil {
+		return ShoppingListItem{}, err
+	}
+	return out, nil
+}
+
+// DeleteShoppingListItem deletes a shopping list item by id.
+func (c *Client) DeleteShoppingListItem(ctx context.Context, listID, itemID string) error {
+	path := fmt.Sprintf("/api/v1/shopping-lists/%s/items/%s", url.PathEscape(listID), url.PathEscape(itemID))
 	return c.doJSON(ctx, http.MethodDelete, path, nil, nil)
 }
 
@@ -559,22 +823,10 @@ func (c *Client) doJSON(ctx context.Context, method, path string, body interface
 	return nil
 }
 
-func (c *Client) doJSONWithQuery(ctx context.Context, method, path string, query url.Values, body interface{}, out interface{}) error {
-	var payload io.Reader
-	if body != nil {
-		raw, err := json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("encode request: %w", err)
-		}
-		payload = bytes.NewReader(raw)
-	}
-
-	req, err := c.newRequest(ctx, method, path, payload)
+func (c *Client) doJSONWithQuery(ctx context.Context, path string, query url.Values, out interface{}) error {
+	req, err := c.newRequest(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return err
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
 	}
 	if len(query) > 0 {
 		req.URL.RawQuery = query.Encode()

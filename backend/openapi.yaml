@@ -12,6 +12,9 @@ tags:
   - name: users
   - name: recipe-books
   - name: tags
+  - name: aisles
+  - name: items
+  - name: shopping-lists
   - name: meal-plans
   - name: recipes
 paths:
@@ -407,6 +410,557 @@ paths:
       security:
         - cookieAuth: []
         - bearerAuth: []
+  /api/v1/aisles:
+    get:
+      tags: [aisles]
+      summary: List grocery aisles
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GroceryAisle"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    post:
+      tags: [aisles]
+      summary: Create grocery aisle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGroceryAisleRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroceryAisle"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/aisles/{id}:
+    get:
+      tags: [aisles]
+      summary: Get grocery aisle
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroceryAisle"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    put:
+      tags: [aisles]
+      summary: Update grocery aisle
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateGroceryAisleRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroceryAisle"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    delete:
+      tags: [aisles]
+      summary: Delete grocery aisle
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/items:
+    get:
+      tags: [items]
+      summary: List items
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Item"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    post:
+      tags: [items]
+      summary: Create item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateItemRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/items/{id}:
+    get:
+      tags: [items]
+      summary: Get item
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    put:
+      tags: [items]
+      summary: Update item
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateItemRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    delete:
+      tags: [items]
+      summary: Delete item
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/shopping-lists:
+    get:
+      tags: [shopping-lists]
+      summary: List shopping lists
+      parameters:
+        - name: start
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: end
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShoppingList"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    post:
+      tags: [shopping-lists]
+      summary: Create shopping list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateShoppingListRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShoppingList"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/shopping-lists/{id}:
+    get:
+      tags: [shopping-lists]
+      summary: Get shopping list
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShoppingListDetail"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    put:
+      tags: [shopping-lists]
+      summary: Update shopping list
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateShoppingListRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShoppingList"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    delete:
+      tags: [shopping-lists]
+      summary: Delete shopping list
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/shopping-lists/{id}/items:
+    get:
+      tags: [shopping-lists]
+      summary: List shopping list items
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShoppingListItem"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    post:
+      tags: [shopping-lists]
+      summary: Add items to shopping list
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShoppingListAddItemsRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShoppingListItem"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/shopping-lists/{id}/items/from-recipes:
+    post:
+      tags: [shopping-lists]
+      summary: Add recipe items to shopping list
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShoppingListAddRecipesRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShoppingListItem"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/shopping-lists/{id}/items/from-meal-plan:
+    post:
+      tags: [shopping-lists]
+      summary: Add meal plan items to shopping list
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShoppingListAddMealPlanRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ShoppingListItem"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+  /api/v1/shopping-lists/{id}/items/{item_id}:
+    patch:
+      tags: [shopping-lists]
+      summary: Update shopping list item purchase state
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+        - $ref: "#/components/parameters/ShoppingListItemIDParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShoppingListItemPurchaseRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShoppingListItem"
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+    delete:
+      tags: [shopping-lists]
+      summary: Remove shopping list item
+      parameters:
+        - $ref: "#/components/parameters/UUIDParam"
+        - $ref: "#/components/parameters/ShoppingListItemIDParam"
+      responses:
+        "204":
+          description: Deleted
+        "400":
+          $ref: "#/components/responses/Problem400"
+        "401":
+          $ref: "#/components/responses/Problem401"
+        "404":
+          $ref: "#/components/responses/Problem404"
+        "500":
+          $ref: "#/components/responses/Problem500"
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
   /api/v1/meal-plans:
     get:
       tags: [meal-plans]
@@ -669,6 +1223,13 @@ components:
       schema:
         type: string
         format: uuid
+    ShoppingListItemIDParam:
+      name: item_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
   responses:
     Problem400:
       description: Bad request
@@ -834,6 +1395,125 @@ components:
       properties:
         name: { type: string }
       required: [name]
+    CreateGroceryAisleRequest:
+      type: object
+      properties:
+        name: { type: string }
+        sort_group: { type: integer }
+        sort_order: { type: integer }
+        numeric_value:
+          type: integer
+          nullable: true
+      required: [name, sort_group, sort_order]
+    CreateItemRequest:
+      type: object
+      properties:
+        name: { type: string }
+        store_url:
+          type: string
+          nullable: true
+        aisle_id:
+          type: string
+          format: uuid
+          nullable: true
+      required: [name]
+    CreateShoppingListRequest:
+      type: object
+      properties:
+        list_date: { type: string, format: date }
+        name: { type: string }
+        notes:
+          type: string
+          nullable: true
+      required: [list_date, name]
+    ShoppingList:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        list_date: { type: string, format: date }
+        name: { type: string }
+        notes:
+          type: string
+          nullable: true
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      required: [id, list_date, name, notes, created_at, updated_at]
+    ShoppingListDetail:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        list_date: { type: string, format: date }
+        name: { type: string }
+        notes:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShoppingListItem"
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      required: [id, list_date, name, notes, items, created_at, updated_at]
+    ShoppingListItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        item:
+          $ref: "#/components/schemas/Item"
+        quantity:
+          type: number
+          nullable: true
+        quantity_text:
+          type: string
+          nullable: true
+        unit:
+          type: string
+          nullable: true
+        is_purchased: { type: boolean }
+        purchased_at:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, item, quantity, quantity_text, unit, is_purchased, purchased_at]
+    ShoppingListItemInput:
+      type: object
+      properties:
+        item_id: { type: string, format: uuid }
+        quantity:
+          type: number
+          nullable: true
+        quantity_text:
+          type: string
+          nullable: true
+        unit:
+          type: string
+          nullable: true
+      required: [item_id]
+    ShoppingListAddItemsRequest:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ShoppingListItemInput"
+      required: [items]
+    ShoppingListAddRecipesRequest:
+      type: object
+      properties:
+        recipe_ids:
+          type: array
+          items: { type: string, format: uuid }
+      required: [recipe_ids]
+    ShoppingListAddMealPlanRequest:
+      type: object
+      properties:
+        date: { type: string, format: date }
+      required: [date]
+    ShoppingListItemPurchaseRequest:
+      type: object
+      properties:
+        is_purchased: { type: boolean }
+      required: [is_purchased]
     MealPlanRecipe:
       type: object
       properties:
@@ -919,6 +1599,29 @@ components:
           type: string
           nullable: true
       required: [items, next_cursor]
+    GroceryAisle:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        sort_group: { type: integer }
+        sort_order: { type: integer }
+        numeric_value:
+          type: integer
+          nullable: true
+      required: [id, name, sort_group, sort_order, numeric_value]
+    Item:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        store_url:
+          type: string
+          nullable: true
+        aisle:
+          $ref: "#/components/schemas/GroceryAisle"
+          nullable: true
+      required: [id, name, store_url, aisle]
     RecipeIngredient:
       type: object
       properties:
@@ -933,7 +1636,8 @@ components:
         unit:
           type: string
           nullable: true
-        item: { type: string }
+        item:
+          $ref: "#/components/schemas/Item"
         prep:
           type: string
           nullable: true
@@ -1015,7 +1719,13 @@ components:
         unit:
           type: string
           nullable: true
-        item: { type: string }
+        item_id:
+          type: string
+          format: uuid
+          nullable: true
+        item_name:
+          type: string
+          nullable: true
         prep:
           type: string
           nullable: true
@@ -1025,7 +1735,7 @@ components:
         original_text:
           type: string
           nullable: true
-      required: [position, quantity, quantity_text, unit, item, prep, notes, original_text]
+      required: [position, quantity, quantity_text, unit, item_id, item_name, prep, notes, original_text]
     RecipeStepUpsert:
       type: object
       properties:

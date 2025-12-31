@@ -3,6 +3,7 @@ package app
 import (
 	"flag"
 	"io"
+	"strings"
 )
 
 // runHelp prints usage for cookctl or a specific command.
@@ -12,8 +13,7 @@ func (a *App) runHelp(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("help", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
+	flags := newFlagSet("help", a.stderr, printHelpUsage)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -28,39 +28,14 @@ func handleHelp(args []string, stdout, stderr io.Writer) int {
 		return exitOK
 	}
 	if len(args) > 1 {
-		writeLine(stderr, "help accepts at most one argument")
-		return exitUsage
+		return usageError(stderr, "help accepts at most one argument")
 	}
 
-	switch args[0] {
-	case "health":
-		printHealthUsage(stdout)
-	case "version":
-		printVersionUsage(stdout)
-	case "completion":
-		printCompletionUsage(stdout)
-	case "help":
-		printHelpUsage(stdout)
-	case "auth":
-		printAuthUsage(stdout)
-	case "token":
-		printTokenUsage(stdout)
-	case "tag":
-		printTagUsage(stdout)
-	case "book":
-		printBookUsage(stdout)
-	case "user":
-		printUserUsage(stdout)
-	case "recipe":
-		printRecipeUsage(stdout)
-	case "meal-plan":
-		printMealPlanUsage(stdout)
-	case "config":
-		printConfigUsage(stdout)
-	default:
-		writef(stderr, "unknown help topic: %s\n", args[0])
-		return exitUsage
+	cmd := findCommand(commandRegistry(), args[0])
+	if cmd == nil || cmd.Usage == nil {
+		return usageErrorf(stderr, "unknown help topic: %s", args[0])
 	}
+	cmd.Usage(stdout)
 
 	return exitOK
 }
@@ -68,27 +43,67 @@ func handleHelp(args []string, stdout, stderr io.Writer) int {
 func printUsage(w io.Writer) {
 	writeLine(w, "usage: cookctl [global flags] <command> [args]")
 	writeLine(w, "commands:")
-	writeLine(w, "  health")
-	writeLine(w, "  version")
-	writeLine(w, "  completion")
-	writeLine(w, "  help")
-	writeLine(w, "  auth")
-	writeLine(w, "  token")
-	writeLine(w, "  tag")
-	writeLine(w, "  book")
-	writeLine(w, "  user")
-	writeLine(w, "  recipe")
-	writeLine(w, "  meal-plan")
-	writeLine(w, "  config")
+	for _, cmd := range commandRegistry() {
+		writeLine(w, "  "+cmd.Name)
+	}
+	printGlobalFlags(w)
+}
+
+// printGlobalFlags renders the global flag list from the shared flag spec.
+func printGlobalFlags(w io.Writer) {
 	writeLine(w, "global flags:")
-	writeLine(w, "  --api-url <url>")
-	writeLine(w, "  --output <table|json>")
-	writeLine(w, "  --timeout <duration>")
-	writeLine(w, "  --debug")
-	writeLine(w, "  --skip-health-check")
-	writeLine(w, "  --version")
-	writeLine(w, "  --help")
-	writeLine(w, "  -h")
+	for _, spec := range globalFlagSpecs() {
+		writeLine(w, formatGlobalFlagLine(spec))
+	}
+}
+
+// formatGlobalFlagLine formats a single global flag line for help output.
+func formatGlobalFlagLine(spec globalFlagSpec) string {
+	line := "  " + spec.name
+	if spec.takesValue {
+		line += " <value>"
+	}
+	if strings.TrimSpace(spec.description) != "" {
+		line += "  " + spec.description
+	}
+	return line
+}
+
+// printCommandUsage prints a usage line and the registered subcommands.
+func printCommandUsage(w io.Writer, usageLine, commandName string) {
+	printCommandUsageLines(w, []string{usageLine}, commandName)
+}
+
+// printCommandUsageLines prints usage lines and the registered subcommands.
+func printCommandUsageLines(w io.Writer, usageLines []string, commandName string) {
+	for _, line := range usageLines {
+		writeLine(w, line)
+	}
+	printCommandSubcommands(w, commandName)
+}
+
+// printCommandSubcommands renders a command's subcommands using the registry.
+func printCommandSubcommands(w io.Writer, commandName string) {
+	cmd := findCommand(commandRegistry(), commandName)
+	if cmd == nil || len(cmd.Subcommands) == 0 {
+		return
+	}
+	writeLine(w, "commands:")
+	for _, sub := range cmd.Subcommands {
+		writeLine(w, "  "+sub.Name)
+	}
+}
+
+// printCommandSubcommandsPath renders subcommands for a nested command path.
+func printCommandSubcommandsPath(w io.Writer, path ...string) {
+	cmd := findCommandPath(commandRegistry(), path...)
+	if cmd == nil || len(cmd.Subcommands) == 0 {
+		return
+	}
+	writeLine(w, "commands:")
+	for _, sub := range cmd.Subcommands {
+		writeLine(w, "  "+sub.Name)
+	}
 }
 
 // printCompletionUsage renders usage for the completion command.
@@ -99,18 +114,9 @@ func printCompletionUsage(w io.Writer) {
 func printHelpUsage(w io.Writer) {
 	writeLine(w, "usage: cookctl help [topic]")
 	writeLine(w, "topics:")
-	writeLine(w, "  health")
-	writeLine(w, "  version")
-	writeLine(w, "  completion")
-	writeLine(w, "  help")
-	writeLine(w, "  auth")
-	writeLine(w, "  token")
-	writeLine(w, "  tag")
-	writeLine(w, "  book")
-	writeLine(w, "  user")
-	writeLine(w, "  recipe")
-	writeLine(w, "  meal-plan")
-	writeLine(w, "  config")
+	for _, cmd := range commandRegistry() {
+		writeLine(w, "  "+cmd.Name)
+	}
 }
 
 func printHealthUsage(w io.Writer) {
@@ -122,32 +128,27 @@ func printVersionUsage(w io.Writer) {
 }
 
 func printAuthUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl auth <command> [flags]")
-	writeLine(w, "commands:")
-	writeLine(w, "  login --username <user> --password-stdin [--token-name <name>] [--expires-at <rfc3339>]")
-	writeLine(w, "  set --token <pat> [--api-url <url>]")
-	writeLine(w, "  set --token-stdin [--api-url <url>]")
-	writeLine(w, "  status")
-	writeLine(w, "  whoami")
-	writeLine(w, "  logout [--revoke]")
+	printCommandUsage(w, "usage: cookctl auth <command> [flags]", "auth")
+	printAuthSetUsage(w)
 }
 
 func printAuthLoginUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl auth login --username <user> --password-stdin [--token-name <name>] [--expires-at <rfc3339>]")
-	writeLine(w, "flags:")
-	writeLine(w, "  --username <user>        Username for login")
-	writeLine(w, "  --password-stdin         Read password from stdin")
-	writeLine(w, "  --token-name <name>      Name for the new PAT (default: cookctl)")
-	writeLine(w, "  --expires-at <rfc3339>   Token expiration")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl auth login --username <user> --password-stdin [--token-name <name>] [--expires-at <rfc3339>]",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := authLoginFlagSet(out)
+		return flags
+	})
 }
 
 func printAuthSetUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl auth set --token <pat> [--api-url <url>]")
-	writeLine(w, "       cookctl auth set --token-stdin [--api-url <url>]")
-	writeLine(w, "flags:")
-	writeLine(w, "  --token <pat>            Personal access token")
-	writeLine(w, "  --token-stdin            Read token from stdin")
-	writeLine(w, "  --api-url <url>          API base URL override")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl auth set --token <pat> [--api-url <url>]",
+		"       cookctl auth set --token-stdin [--api-url <url>]",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := authSetFlagSet(out)
+		return flags
+	})
 }
 
 func printAuthStatusUsage(w io.Writer) {
@@ -159,17 +160,16 @@ func printAuthWhoAmIUsage(w io.Writer) {
 }
 
 func printAuthLogoutUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl auth logout [--revoke]")
-	writeLine(w, "flags:")
-	writeLine(w, "  --revoke                 Revoke stored token before clearing credentials")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl auth logout [--revoke]",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := authLogoutFlagSet(out)
+		return flags
+	})
 }
 
 func printTokenUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl token <command> [flags]")
-	writeLine(w, "commands:")
-	writeLine(w, "  list")
-	writeLine(w, "  create --name <name> [--expires-at <rfc3339>]")
-	writeLine(w, "  revoke <id> --yes")
+	printCommandUsage(w, "usage: cookctl token <command> [flags]", "token")
 }
 
 func printTokenListUsage(w io.Writer) {
@@ -177,25 +177,25 @@ func printTokenListUsage(w io.Writer) {
 }
 
 func printTokenCreateUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl token create --name <name> [--expires-at <rfc3339>]")
-	writeLine(w, "flags:")
-	writeLine(w, "  --name <name>            Token name")
-	writeLine(w, "  --expires-at <rfc3339>   Token expiration")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl token create --name <name> [--expires-at <rfc3339>]",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := tokenCreateFlagSet(out)
+		return flags
+	})
 }
 
 func printTokenRevokeUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl token revoke <id> --yes")
-	writeLine(w, "flags:")
-	writeLine(w, "  --yes                    Confirm token revocation")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl token revoke <id> --yes",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := tokenRevokeFlagSet(out)
+		return flags
+	})
 }
 
 func printTagUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl tag <command> [flags]")
-	writeLine(w, "commands:")
-	writeLine(w, "  list")
-	writeLine(w, "  create --name <name>")
-	writeLine(w, "  update <id> --name <name>")
-	writeLine(w, "  delete <id> --yes")
+	printCommandUsage(w, "usage: cookctl tag <command> [flags]", "tag")
 }
 
 func printTagListUsage(w io.Writer) {
@@ -203,30 +203,36 @@ func printTagListUsage(w io.Writer) {
 }
 
 func printTagCreateUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl tag create --name <name>")
-	writeLine(w, "flags:")
-	writeLine(w, "  --name <name>            Tag name")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl tag create --name <name>",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := tagCreateFlagSet(out)
+		return flags
+	})
 }
 
 func printTagUpdateUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl tag update <id> --name <name>")
-	writeLine(w, "flags:")
-	writeLine(w, "  --name <name>            Tag name")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl tag update <id> --name <name>",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := tagUpdateFlagSet(out)
+		return flags
+	})
 }
 
 func printTagDeleteUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl tag delete <id> --yes")
-	writeLine(w, "flags:")
-	writeLine(w, "  --yes                    Confirm tag deletion")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl tag delete <id> --yes",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := tagDeleteFlagSet(out)
+		return flags
+	})
 }
 
+// Item and shopping list usage helpers live in shopping_list_usage.go
+
 func printBookUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl book <command> [flags]")
-	writeLine(w, "commands:")
-	writeLine(w, "  list")
-	writeLine(w, "  create --name <name>")
-	writeLine(w, "  update <id> --name <name>")
-	writeLine(w, "  delete <id> --yes")
+	printCommandUsage(w, "usage: cookctl book <command> [flags]", "book")
 }
 
 func printBookListUsage(w io.Writer) {
@@ -234,29 +240,34 @@ func printBookListUsage(w io.Writer) {
 }
 
 func printBookCreateUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl book create --name <name>")
-	writeLine(w, "flags:")
-	writeLine(w, "  --name <name>            Book name")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl book create --name <name>",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := bookCreateFlagSet(out)
+		return flags
+	})
 }
 
 func printBookUpdateUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl book update <id> --name <name>")
-	writeLine(w, "flags:")
-	writeLine(w, "  --name <name>            Book name")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl book update <id> --name <name>",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := bookUpdateFlagSet(out)
+		return flags
+	})
 }
 
 func printBookDeleteUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl book delete <id> --yes")
-	writeLine(w, "flags:")
-	writeLine(w, "  --yes                    Confirm book deletion")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl book delete <id> --yes",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := bookDeleteFlagSet(out)
+		return flags
+	})
 }
 
 func printUserUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl user <command> [flags]")
-	writeLine(w, "commands:")
-	writeLine(w, "  list")
-	writeLine(w, "  create --username <user> --password-stdin [--display-name <name>]")
-	writeLine(w, "  deactivate <id> --yes")
+	printCommandUsage(w, "usage: cookctl user <command> [flags]", "user")
 }
 
 func printUserListUsage(w io.Writer) {
@@ -264,51 +275,34 @@ func printUserListUsage(w io.Writer) {
 }
 
 func printUserCreateUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl user create --username <user> --password-stdin [--display-name <name>]")
-	writeLine(w, "flags:")
-	writeLine(w, "  --username <user>        Username for the new user")
-	writeLine(w, "  --password-stdin         Read password from stdin")
-	writeLine(w, "  --display-name <name>    Display name for the new user")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl user create --username <user> --password-stdin [--display-name <name>]",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := userCreateFlagSet(out)
+		return flags
+	})
 }
 
 func printUserDeactivateUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl user deactivate <id> --yes")
-	writeLine(w, "flags:")
-	writeLine(w, "  --yes                    Confirm user deactivation")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl user deactivate <id> --yes",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := userDeactivateFlagSet(out)
+		return flags
+	})
 }
 
 func printRecipeUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl recipe <command> [flags]")
-	writeLine(w, "commands:")
-	writeLine(w, "  list [--q <text>] [--book <name>|--book-id <id>] [--tag <name>|--tag-id <id>] [--servings <n>] [--include-deleted] [--limit <n>] [--cursor <c>] [--all] [--with-counts]")
-	writeLine(w, "  get <id|title>")
-	writeLine(w, "  create [--file <path> | --stdin | --interactive] [--allow-duplicate]")
-	writeLine(w, "  update <id|title> [--file <path> | --stdin]")
-	writeLine(w, "  init [<id|title>]")
-	writeLine(w, "  template")
-	writeLine(w, "  export <id|title>")
-	writeLine(w, "  import [--file <path> | --stdin] [--allow-duplicate]")
-	writeLine(w, "  tag <id|title> <tag...> [--replace] [--create-missing|--no-create-missing]")
-	writeLine(w, "  clone <id|title> [--title <title>] [--allow-duplicate]")
-	writeLine(w, "  edit <id|title> [--editor <cmd>]")
-	writeLine(w, "  delete <id|title> --yes")
-	writeLine(w, "  restore <id|title> --yes")
+	printCommandUsage(w, "usage: cookctl recipe <command> [flags]", "recipe")
 }
 
 func printRecipeListUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl recipe list [flags]")
-	writeLine(w, "flags:")
-	writeLine(w, "  --q <text>               Search query")
-	writeLine(w, "  --book <name>            Filter by recipe book name")
-	writeLine(w, "  --book-id <id>           Filter by recipe book id")
-	writeLine(w, "  --tag <name>             Filter by tag name")
-	writeLine(w, "  --tag-id <id>            Filter by tag id")
-	writeLine(w, "  --servings <n>           Filter by servings count")
-	writeLine(w, "  --include-deleted        Include deleted recipes")
-	writeLine(w, "  --limit <n>              Max items per page")
-	writeLine(w, "  --cursor <cursor>        Pagination cursor")
-	writeLine(w, "  --all                    Fetch all pages")
-	writeLine(w, "  --with-counts            Include ingredient and step counts")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl recipe list [flags]",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := recipeListFlagSet(out)
+		return flags
+	})
 }
 
 func printRecipeGetUsage(w io.Writer) {
@@ -316,19 +310,21 @@ func printRecipeGetUsage(w io.Writer) {
 }
 
 func printRecipeCreateUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl recipe create [--file <path> | --stdin | --interactive] [--allow-duplicate]")
-	writeLine(w, "flags:")
-	writeLine(w, "  --file <path>            Read recipe JSON from a file")
-	writeLine(w, "  --stdin                  Read recipe JSON from stdin")
-	writeLine(w, "  --interactive            Create recipe with interactive prompts")
-	writeLine(w, "  --allow-duplicate        Allow duplicate recipe titles")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl recipe create [--file <path> | --stdin | --interactive] [--allow-duplicate]",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := recipeCreateFlagSet(out)
+		return flags
+	})
 }
 
 func printRecipeUpdateUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl recipe update <id|title> [--file <path> | --stdin]")
-	writeLine(w, "flags:")
-	writeLine(w, "  --file <path>            Read recipe JSON from a file")
-	writeLine(w, "  --stdin                  Read recipe JSON from stdin")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl recipe update <id|title> [--file <path> | --stdin]",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := recipeUpdateFlagSet(out)
+		return flags
+	})
 }
 
 func printRecipeInitUsage(w io.Writer) {
@@ -344,109 +340,116 @@ func printRecipeExportUsage(w io.Writer) {
 }
 
 func printRecipeImportUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl recipe import [--file <path> | --stdin] [--allow-duplicate]")
-	writeLine(w, "flags:")
-	writeLine(w, "  --file <path>            Read recipe JSON from a file")
-	writeLine(w, "  --stdin                  Read recipe JSON from stdin")
-	writeLine(w, "  --allow-duplicate        Allow duplicate recipe titles")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl recipe import [--file <path> | --stdin] [--allow-duplicate]",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := recipeImportFlagSet(out)
+		return flags
+	})
 }
 
 func printRecipeTagUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl recipe tag <id|title> <tag...> [--replace] [--create-missing|--no-create-missing]")
-	writeLine(w, "flags:")
-	writeLine(w, "  --replace                Replace recipe tags instead of merging")
-	writeLine(w, "  --create-missing         Create tags that do not exist (default)")
-	writeLine(w, "  --no-create-missing      Fail when tags are missing")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl recipe tag <id|title> <tag...> [--replace] [--create-missing|--no-create-missing]",
+	}, recipeTagFlagSet)
 }
 
 func printRecipeCloneUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl recipe clone <id|title> [--title <title>] [--allow-duplicate]")
-	writeLine(w, "flags:")
-	writeLine(w, "  --title <title>          Title for the cloned recipe")
-	writeLine(w, "  --allow-duplicate        Allow duplicate recipe titles")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl recipe clone <id|title> [--title <title>] [--allow-duplicate]",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := recipeCloneFlagSet(out)
+		return flags
+	})
 }
 
 func printRecipeEditUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl recipe edit <id|title> [--editor <cmd>]")
-	writeLine(w, "flags:")
-	writeLine(w, "  --editor <cmd>           Editor command")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl recipe edit <id|title> [--editor <cmd>]",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := recipeEditFlagSet(out)
+		return flags
+	})
 }
 
 func printRecipeDeleteUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl recipe delete <id|title> --yes")
-	writeLine(w, "flags:")
-	writeLine(w, "  --yes                    Confirm recipe deletion")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl recipe delete <id|title> --yes",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := recipeDeleteFlagSet(out)
+		return flags
+	})
 }
 
 func printRecipeRestoreUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl recipe restore <id|title> --yes")
-	writeLine(w, "flags:")
-	writeLine(w, "  --yes                    Confirm recipe restore")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl recipe restore <id|title> --yes",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := recipeRestoreFlagSet(out)
+		return flags
+	})
 }
 
 func printMealPlanUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl meal-plan <command> [flags]")
-	writeLine(w, "commands:")
-	writeLine(w, "  list --start <YYYY-MM-DD> --end <YYYY-MM-DD>")
-	writeLine(w, "  create --date <YYYY-MM-DD> --recipe-id <id>")
-	writeLine(w, "  delete --date <YYYY-MM-DD> --recipe-id <id> --yes")
+	printCommandUsage(w, "usage: cookctl meal-plan <command> [flags]", "meal-plan")
 }
 
 func printMealPlanListUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl meal-plan list --start <YYYY-MM-DD> --end <YYYY-MM-DD>")
-	writeLine(w, "flags:")
-	writeLine(w, "  --start <YYYY-MM-DD>     Start date")
-	writeLine(w, "  --end <YYYY-MM-DD>       End date")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl meal-plan list --start <YYYY-MM-DD> --end <YYYY-MM-DD>",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := mealPlanListFlagSet(out)
+		return flags
+	})
 }
 
 func printMealPlanCreateUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl meal-plan create --date <YYYY-MM-DD> --recipe-id <id>")
-	writeLine(w, "flags:")
-	writeLine(w, "  --date <YYYY-MM-DD>      Meal plan date")
-	writeLine(w, "  --recipe-id <id>         Recipe id")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl meal-plan create --date <YYYY-MM-DD> --recipe-id <id>",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := mealPlanCreateFlagSet(out)
+		return flags
+	})
 }
 
 func printMealPlanDeleteUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl meal-plan delete --date <YYYY-MM-DD> --recipe-id <id> --yes")
-	writeLine(w, "flags:")
-	writeLine(w, "  --date <YYYY-MM-DD>      Meal plan date")
-	writeLine(w, "  --recipe-id <id>         Recipe id")
-	writeLine(w, "  --yes                    Confirm meal plan deletion")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl meal-plan delete --date <YYYY-MM-DD> --recipe-id <id> --yes",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := mealPlanDeleteFlagSet(out)
+		return flags
+	})
 }
 
 func printConfigUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl config <command> [flags]")
-	writeLine(w, "commands:")
-	writeLine(w, "  view [--config <path>]")
-	writeLine(w, "  set [--config <path>] [--api-url <url>] [--output <table|json>] [--timeout <duration>] [--debug]")
-	writeLine(w, "  unset [--config <path>] [--api-url] [--output] [--timeout] [--debug]")
-	writeLine(w, "  path")
+	printCommandUsage(w, "usage: cookctl config <command> [flags]", "config")
 }
 
 func printConfigViewUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl config view [--config <path>]")
-	writeLine(w, "flags:")
-	writeLine(w, "  --config <path>          Config file path")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl config view [--config <path>]",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := configViewFlagSet(out)
+		return flags
+	})
 }
 
 func printConfigSetUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl config set [--config <path>] [--api-url <url>] [--output <table|json>] [--timeout <duration>] [--debug]")
-	writeLine(w, "flags:")
-	writeLine(w, "  --config <path>          Config file path")
-	writeLine(w, "  --api-url <url>          API base URL")
-	writeLine(w, "  --output <table|json>    Output format")
-	writeLine(w, "  --timeout <duration>     Request timeout (e.g. 30s)")
-	writeLine(w, "  --debug                  Enable debug logging")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl config set [--config <path>] [--api-url <url>] [--output <table|json>] [--timeout <duration>] [--debug]",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := configSetFlagSet(out)
+		return flags
+	})
 }
 
 func printConfigUnsetUsage(w io.Writer) {
-	writeLine(w, "usage: cookctl config unset [--config <path>] [--api-url] [--output] [--timeout] [--debug]")
-	writeLine(w, "flags:")
-	writeLine(w, "  --config <path>          Config file path")
-	writeLine(w, "  --api-url                Clear api_url")
-	writeLine(w, "  --output                 Clear output")
-	writeLine(w, "  --timeout                Clear timeout")
-	writeLine(w, "  --debug                  Clear debug")
+	printUsageWithFlags(w, []string{
+		"usage: cookctl config unset [--config <path>] [--api-url] [--output] [--timeout] [--debug]",
+	}, func(out io.Writer) *flag.FlagSet {
+		flags, _ := configUnsetFlagSet(out)
+		return flags
+	})
 }
 
 func printConfigPathUsage(w io.Writer) {

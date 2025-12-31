@@ -82,26 +82,47 @@ func TestRecipes_GetDetail(t *testing.T) {
 		t.Fatalf("scan numeric: %v", scanErr)
 	}
 
-	if err := queries.CreateRecipeIngredient(ctx, sqlc.CreateRecipeIngredientParams{
+	carrotItem, err := queries.CreateItem(ctx, sqlc.CreateItemParams{
+		Name:      "carrot",
+		StoreUrl:  pgtype.Text{},
+		AisleID:   pgtype.UUID{},
+		CreatedBy: user.ID,
+		UpdatedBy: user.ID,
+	})
+	if err != nil {
+		t.Fatalf("create item carrot: %v", err)
+	}
+	chickenItem, err := queries.CreateItem(ctx, sqlc.CreateItemParams{
+		Name:      "chicken",
+		StoreUrl:  pgtype.Text{},
+		AisleID:   pgtype.UUID{},
+		CreatedBy: user.ID,
+		UpdatedBy: user.ID,
+	})
+	if err != nil {
+		t.Fatalf("create item chicken: %v", err)
+	}
+
+	if err = queries.CreateRecipeIngredient(ctx, sqlc.CreateRecipeIngredientParams{
 		RecipeID:     recipe.ID,
 		Position:     2,
 		Quantity:     qty2,
 		QuantityText: pgtype.Text{String: "1/2", Valid: true},
 		Unit:         pgtype.Text{String: "lb", Valid: true},
-		Item:         "carrot",
+		ItemID:       carrotItem.ID,
 		OriginalText: pgtype.Text{String: "1/2 lb carrot", Valid: true},
 		CreatedBy:    user.ID,
 		UpdatedBy:    user.ID,
 	}); err != nil {
 		t.Fatalf("create ingredient 2: %v", err)
 	}
-	if err := queries.CreateRecipeIngredient(ctx, sqlc.CreateRecipeIngredientParams{
+	if err = queries.CreateRecipeIngredient(ctx, sqlc.CreateRecipeIngredientParams{
 		RecipeID:     recipe.ID,
 		Position:     1,
 		Quantity:     qty1,
 		QuantityText: pgtype.Text{String: "1", Valid: true},
 		Unit:         pgtype.Text{String: "lb", Valid: true},
-		Item:         "chicken",
+		ItemID:       chickenItem.ID,
 		OriginalText: pgtype.Text{String: "1 lb chicken", Valid: true},
 		CreatedBy:    user.ID,
 		UpdatedBy:    user.ID,
@@ -109,7 +130,7 @@ func TestRecipes_GetDetail(t *testing.T) {
 		t.Fatalf("create ingredient 1: %v", err)
 	}
 
-	if err := queries.CreateRecipeStep(ctx, sqlc.CreateRecipeStepParams{
+	if err = queries.CreateRecipeStep(ctx, sqlc.CreateRecipeStepParams{
 		RecipeID:    recipe.ID,
 		StepNumber:  2,
 		Instruction: "Serve.",
@@ -118,7 +139,7 @@ func TestRecipes_GetDetail(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("create step 2: %v", err)
 	}
-	if err := queries.CreateRecipeStep(ctx, sqlc.CreateRecipeStepParams{
+	if err = queries.CreateRecipeStep(ctx, sqlc.CreateRecipeStepParams{
 		RecipeID:    recipe.ID,
 		StepNumber:  1,
 		Instruction: "Boil the chicken.",
@@ -128,7 +149,7 @@ func TestRecipes_GetDetail(t *testing.T) {
 		t.Fatalf("create step 1: %v", err)
 	}
 
-	if err := queries.CreateRecipeTag(ctx, sqlc.CreateRecipeTagParams{
+	if err = queries.CreateRecipeTag(ctx, sqlc.CreateRecipeTagParams{
 		RecipeID:  recipe.ID,
 		TagID:     tag.ID,
 		CreatedBy: user.ID,
@@ -200,7 +221,7 @@ func TestRecipes_GetDetail(t *testing.T) {
 	if len(got.Tags) != 1 || got.Tags[0].Name != tagNameSoup {
 		t.Fatalf("tags=%v, want %s", got.Tags, tagNameSoup)
 	}
-	if len(got.Ingredients) != 2 || got.Ingredients[0].Position != 1 || got.Ingredients[0].Item != "chicken" {
+	if len(got.Ingredients) != 2 || got.Ingredients[0].Position != 1 || got.Ingredients[0].Item.Name != "chicken" {
 		t.Fatalf("ingredients=%v, want ordered by position", got.Ingredients)
 	}
 	if len(got.Steps) != 2 || got.Steps[0].StepNumber != 1 || got.Steps[0].Instruction != "Boil the chicken." {

@@ -1,7 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
-import { useFieldArray, useForm } from 'react-hook-form'
+import { Controller, useFieldArray, useForm } from 'react-hook-form'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { z } from 'zod'
 
@@ -12,6 +12,7 @@ import { listTags } from '../../api/tags'
 
 import styles from './CrudList.module.css'
 import { Page } from './Page'
+import { ItemAutocomplete } from '../components'
 
 type RecipeEditorPageProps = {
   mode: 'create' | 'edit'
@@ -21,7 +22,8 @@ type IngredientFormValues = {
   quantity: string
   quantity_text: string
   unit: string
-  item: string
+  item_id: string
+  item_name: string
   prep: string
   notes: string
   original_text: string
@@ -44,22 +46,31 @@ type RecipeFormValues = {
   steps: StepFormValues[]
 }
 
-const ingredientSchema = z.object({
-  quantity: z
-    .string()
-    .trim()
-    .refine(
-      (v) =>
-        v === '' || (!Number.isNaN(Number(v)) && Number.isFinite(Number(v))),
-      'Quantity must be a number',
-    ),
-  quantity_text: z.string(),
-  unit: z.string(),
-  item: z.string().trim().min(1, 'Item is required'),
-  prep: z.string(),
-  notes: z.string(),
-  original_text: z.string(),
-})
+const ingredientSchema = z
+  .object({
+    quantity: z
+      .string()
+      .trim()
+      .refine(
+        (v) =>
+          v === '' || (!Number.isNaN(Number(v)) && Number.isFinite(Number(v))),
+        'Quantity must be a number',
+      ),
+    quantity_text: z.string(),
+    unit: z.string(),
+    item_id: z.string(),
+    item_name: z.string(),
+    prep: z.string(),
+    notes: z.string(),
+    original_text: z.string(),
+  })
+  .refine(
+    (values) => values.item_id.trim() !== '' || values.item_name.trim() !== '',
+    {
+      message: 'Item is required',
+      path: ['item_name'],
+    },
+  )
 
 const stepSchema = z.object({
   instruction: z.string().trim().min(1, 'Instruction is required'),
@@ -185,7 +196,8 @@ export function RecipeEditorPage({ mode }: RecipeEditorPageProps) {
           quantity: ing.quantity === null ? '' : String(ing.quantity),
           quantity_text: ing.quantity_text ?? '',
           unit: ing.unit ?? '',
-          item: ing.item,
+          item_id: ing.item.id,
+          item_name: ing.item.name,
           prep: ing.prep ?? '',
           notes: ing.notes ?? '',
           original_text: ing.original_text ?? '',
@@ -372,7 +384,8 @@ export function RecipeEditorPage({ mode }: RecipeEditorPageProps) {
                       quantity: '',
                       quantity_text: '',
                       unit: '',
-                      item: '',
+                      item_id: '',
+                      item_name: '',
                       prep: '',
                       notes: '',
                       original_text: '',
@@ -403,14 +416,39 @@ export function RecipeEditorPage({ mode }: RecipeEditorPageProps) {
                         {...register(`ingredients.${index}.unit`)}
                       />
                     </div>
-                    <input
-                      className={styles.input}
-                      placeholder="Item"
-                      {...register(`ingredients.${index}.item`)}
+                    <Controller
+                      control={form.control}
+                      name={`ingredients.${index}.item_name`}
+                      render={({ field }) => (
+                        <ItemAutocomplete
+                          value={{
+                            item_id: form.getValues(
+                              `ingredients.${index}.item_id`,
+                            ),
+                            item_name: field.value,
+                          }}
+                          onChange={(next) => {
+                            field.onChange(next.item_name)
+                            form.setValue(
+                              `ingredients.${index}.item_id`,
+                              next.item_id,
+                              { shouldValidate: true },
+                            )
+                          }}
+                          placeholder="Item"
+                          disabled={isSubmitting}
+                          ariaLabel="Item"
+                          inputClassName={styles.input}
+                        />
+                      )}
                     />
-                    {errors.ingredients?.[index]?.item ? (
+                    <input
+                      type="hidden"
+                      {...register(`ingredients.${index}.item_id`)}
+                    />
+                    {errors.ingredients?.[index]?.item_name ? (
                       <div role="alert" className={styles.alert}>
-                        {errors.ingredients[index]?.item?.message}
+                        {errors.ingredients[index]?.item_name?.message}
                       </div>
                     ) : null}
                     {errors.ingredients?.[index]?.quantity ? (
@@ -540,7 +578,13 @@ function buildUpsert(values: RecipeFormValues) {
       quantity_text:
         ing.quantity_text.trim() === '' ? null : ing.quantity_text.trim(),
       unit: ing.unit.trim() === '' ? null : ing.unit.trim(),
-      item: ing.item.trim(),
+      item_id: ing.item_id.trim() === '' ? null : ing.item_id.trim(),
+      item_name:
+        ing.item_id.trim() === ''
+          ? ing.item_name.trim() === ''
+            ? null
+            : ing.item_name.trim()
+          : null,
       prep: ing.prep.trim() === '' ? null : ing.prep.trim(),
       notes: ing.notes.trim() === '' ? null : ing.notes.trim(),
       original_text:

@@ -1,0 +1,27 @@
+id: httpapi-auth-guard
+language: Go
+message: httpapi handlers must call authInfoFromRequest (public endpoints must be allowlisted).
+severity: error
+files:
+  - internal/httpapi/**/*.go
+ignores:
+  - internal/httpapi/**/*_test.go
+rule:
+  all:
+    - pattern: |
+        func (a *App) handle$NAME($$$) $RET {
+          $$$BODY
+        }
+    - not:
+        pattern: |
+          func (a *App) handleLogin($$$) $RET {
+            $$$BODY
+          }
+    - not:
+        pattern: |
+          func (a *App) handleHealthz($$$) $RET {
+            $$$BODY
+          }
+    - not:
+        has:
+          pattern: authInfoFromRequest($$$)

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,158 @@ import (
 
 	"github.com/saiaj/cooking_app/backend/internal/cookctl/client"
 )
+
+const (
+	recipeTagFlagReplace         = "replace"
+	recipeTagFlagCreateMissing   = "create-missing"
+	recipeTagFlagNoCreateMissing = "no-create-missing"
+)
+
+type recipeListFlags struct {
+	query          string
+	bookID         string
+	bookName       string
+	tagID          string
+	tagName        string
+	includeDeleted bool
+	limit          int
+	cursor         string
+	all            bool
+	servings       int
+	withCounts     bool
+}
+
+type recipeCreateFlags struct {
+	filePath       string
+	useStdin       bool
+	interactive    bool
+	allowDuplicate bool
+}
+
+type recipeUpdateFlags struct {
+	filePath string
+	useStdin bool
+}
+
+type recipeImportFlags struct {
+	filePath       string
+	useStdin       bool
+	allowDuplicate bool
+}
+
+type recipeCloneFlags struct {
+	titleOverride  string
+	allowDuplicate bool
+}
+
+type recipeEditFlags struct {
+	editorOverride string
+}
+
+type recipeDeleteFlags struct {
+	yes bool
+}
+
+type recipeRestoreFlags struct {
+	yes bool
+}
+
+func recipeListFlagSet(out io.Writer) (*flag.FlagSet, *recipeListFlags) {
+	opts := &recipeListFlags{}
+	flags := newFlagSet("recipe list", out, printRecipeListUsage)
+	flags.StringVar(&opts.query, "q", "", "Search query")
+	flags.StringVar(&opts.bookID, "book-id", "", "Filter by recipe book id")
+	flags.StringVar(&opts.bookName, "book", "", "Filter by recipe book name")
+	flags.StringVar(&opts.tagID, "tag-id", "", "Filter by tag id")
+	flags.StringVar(&opts.tagName, "tag", "", "Filter by tag name")
+	flags.BoolVar(&opts.includeDeleted, "include-deleted", false, "Include deleted recipes")
+	flags.IntVar(&opts.limit, "limit", 0, "Max items per page")
+	flags.StringVar(&opts.cursor, "cursor", "", "Pagination cursor")
+	flags.BoolVar(&opts.all, "all", false, "Fetch all pages")
+	flags.IntVar(&opts.servings, "servings", 0, "Filter by servings count")
+	flags.BoolVar(&opts.withCounts, "with-counts", false, "Include ingredient and step counts")
+	return flags, opts
+}
+
+func recipeGetFlagSet(out io.Writer) *flag.FlagSet {
+	return newFlagSet("recipe get", out, printRecipeGetUsage)
+}
+
+func recipeCreateFlagSet(out io.Writer) (*flag.FlagSet, *recipeCreateFlags) {
+	opts := &recipeCreateFlags{}
+	flags := newFlagSet("recipe create", out, printRecipeCreateUsage)
+	flags.StringVar(&opts.filePath, "file", "", "Path to recipe JSON")
+	flags.BoolVar(&opts.useStdin, "stdin", false, "Read recipe JSON from stdin")
+	flags.BoolVar(&opts.interactive, "interactive", false, "Create recipe with interactive prompts")
+	flags.BoolVar(&opts.allowDuplicate, "allow-duplicate", false, "Allow duplicate recipe titles")
+	return flags, opts
+}
+
+func recipeUpdateFlagSet(out io.Writer) (*flag.FlagSet, *recipeUpdateFlags) {
+	opts := &recipeUpdateFlags{}
+	flags := newFlagSet("recipe update", out, printRecipeUpdateUsage)
+	flags.StringVar(&opts.filePath, "file", "", "Path to recipe JSON")
+	flags.BoolVar(&opts.useStdin, "stdin", false, "Read recipe JSON from stdin")
+	return flags, opts
+}
+
+func recipeInitFlagSet(out io.Writer) *flag.FlagSet {
+	return newFlagSet("recipe init", out, printRecipeInitUsage)
+}
+
+func recipeTemplateFlagSet(out io.Writer) *flag.FlagSet {
+	return newFlagSet("recipe template", out, printRecipeTemplateUsage)
+}
+
+func recipeExportFlagSet(out io.Writer) *flag.FlagSet {
+	return newFlagSet("recipe export", out, printRecipeExportUsage)
+}
+
+func recipeImportFlagSet(out io.Writer) (*flag.FlagSet, *recipeImportFlags) {
+	opts := &recipeImportFlags{}
+	flags := newFlagSet("recipe import", out, printRecipeImportUsage)
+	flags.StringVar(&opts.filePath, "file", "", "Path to recipe JSON")
+	flags.BoolVar(&opts.useStdin, "stdin", false, "Read recipe JSON from stdin")
+	flags.BoolVar(&opts.allowDuplicate, "allow-duplicate", false, "Allow duplicate recipe titles")
+	return flags, opts
+}
+
+func recipeTagFlagSet(out io.Writer) *flag.FlagSet {
+	flags := newFlagSet("recipe tag", out, printRecipeTagUsage)
+	flags.BoolVar(new(bool), recipeTagFlagReplace, false, "Replace existing tags")
+	flags.BoolVar(new(bool), recipeTagFlagCreateMissing, true, "Create missing tags")
+	flags.BoolVar(new(bool), recipeTagFlagNoCreateMissing, false, "Do not create missing tags")
+	return flags
+}
+
+func recipeCloneFlagSet(out io.Writer) (*flag.FlagSet, *recipeCloneFlags) {
+	opts := &recipeCloneFlags{}
+	flags := newFlagSet("recipe clone", out, printRecipeCloneUsage)
+	flags.StringVar(&opts.titleOverride, "title", "", "Title for the cloned recipe")
+	flags.BoolVar(&opts.allowDuplicate, "allow-duplicate", false, "Allow duplicate recipe titles")
+	return flags, opts
+}
+
+func recipeEditFlagSet(out io.Writer) (*flag.FlagSet, *recipeEditFlags) {
+	opts := &recipeEditFlags{}
+	flags := newFlagSet("recipe edit", out, printRecipeEditUsage)
+	flags.StringVar(&opts.editorOverride, "editor", "", "Editor command")
+	return flags, opts
+}
+
+func recipeDeleteFlagSet(out io.Writer) (*flag.FlagSet, *recipeDeleteFlags) {
+	opts := &recipeDeleteFlags{}
+	flags := newFlagSet("recipe delete", out, printRecipeDeleteUsage)
+	flags.BoolVar(&opts.yes, "yes", false, "Confirm recipe deletion")
+	return flags, opts
+}
+
+func recipeRestoreFlagSet(out io.Writer) (*flag.FlagSet, *recipeRestoreFlags) {
+	opts := &recipeRestoreFlags{}
+	flags := newFlagSet("recipe restore", out, printRecipeRestoreUsage)
+	flags.BoolVar(&opts.yes, "yes", false, "Confirm recipe restore")
+	return flags, opts
+}
 
 func (a *App) runRecipe(args []string) int {
 	if len(args) > 0 && isHelpFlag(args[0]) {
@@ -52,7 +205,7 @@ func (a *App) runRecipe(args []string) int {
 	case commandRestore:
 		return a.runRecipeRestore(args[1:])
 	default:
-		writef(a.stderr, "unknown recipe command: %s\n", args[0])
+		usageErrorf(a.stderr, "unknown recipe command: %s", args[0])
 		printRecipeUsage(a.stderr)
 		return exitUsage
 	}
@@ -64,108 +217,65 @@ func (a *App) runRecipeList(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("recipe list", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var query string
-	var bookID string
-	var bookName string
-	var tagID string
-	var tagName string
-	var includeDeleted bool
-	var limit int
-	var cursor string
-	var all bool
-	var servings int
-	var withCounts bool
-
-	flags.StringVar(&query, "q", "", "Search query")
-	flags.StringVar(&bookID, "book-id", "", "Filter by recipe book id")
-	flags.StringVar(&bookName, "book", "", "Filter by recipe book name")
-	flags.StringVar(&tagID, "tag-id", "", "Filter by tag id")
-	flags.StringVar(&tagName, "tag", "", "Filter by tag name")
-	flags.BoolVar(&includeDeleted, "include-deleted", false, "Include deleted recipes")
-	flags.IntVar(&limit, "limit", 0, "Max items per page")
-	flags.StringVar(&cursor, "cursor", "", "Pagination cursor")
-	flags.BoolVar(&all, "all", false, "Fetch all pages")
-	flags.IntVar(&servings, "servings", 0, "Filter by servings count")
-	flags.BoolVar(&withCounts, "with-counts", false, "Include ingredient and step counts")
-
+	flags, opts := recipeListFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
-	if limit < 0 {
-		writeLine(a.stderr, "limit must be positive")
-		return exitUsage
+	if opts.limit < 0 {
+		return usageError(a.stderr, "limit must be positive")
 	}
-	if servings < 0 {
-		writeLine(a.stderr, "servings must be positive")
-		return exitUsage
+	if opts.servings < 0 {
+		return usageError(a.stderr, "servings must be positive")
 	}
-	if strings.TrimSpace(bookID) != "" && strings.TrimSpace(bookName) != "" {
-		writeLine(a.stderr, "book and book-id cannot be combined")
-		return exitUsage
+	if strings.TrimSpace(opts.bookID) != "" && strings.TrimSpace(opts.bookName) != "" {
+		return usageError(a.stderr, "book and book-id cannot be combined")
 	}
-	if strings.TrimSpace(tagID) != "" && strings.TrimSpace(tagName) != "" {
-		writeLine(a.stderr, "tag and tag-id cannot be combined")
-		return exitUsage
-	}
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
+	if strings.TrimSpace(opts.tagID) != "" && strings.TrimSpace(opts.tagName) != "" {
+		return usageError(a.stderr, "tag and tag-id cannot be combined")
 	}
 
 	listParams := client.RecipeListParams{
-		Query:          strings.TrimSpace(query),
-		BookID:         strings.TrimSpace(bookID),
-		TagID:          strings.TrimSpace(tagID),
-		IncludeDeleted: includeDeleted,
-		Limit:          limit,
-		Cursor:         strings.TrimSpace(cursor),
+		Query:          strings.TrimSpace(opts.query),
+		BookID:         strings.TrimSpace(opts.bookID),
+		TagID:          strings.TrimSpace(opts.tagID),
+		IncludeDeleted: opts.includeDeleted,
+		Limit:          opts.limit,
+		Cursor:         strings.TrimSpace(opts.cursor),
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
-	if strings.TrimSpace(bookName) != "" {
-		resolved, resolveErr := resolveBookIDByName(ctx, api, bookName)
+	if strings.TrimSpace(opts.bookName) != "" {
+		resolved, resolveErr := resolveBookIDByName(ctx, api, opts.bookName)
 		if resolveErr != nil {
-			writeLine(a.stderr, resolveErr)
-			return exitUsage
+			return usageError(a.stderr, resolveErr.Error())
 		}
 		listParams.BookID = resolved
 	}
-	if strings.TrimSpace(tagName) != "" {
-		resolved, resolveErr := resolveTagIDByName(ctx, api, tagName)
+	if strings.TrimSpace(opts.tagName) != "" {
+		resolved, resolveErr := resolveTagIDByName(ctx, api, opts.tagName)
 		if resolveErr != nil {
-			writeLine(a.stderr, resolveErr)
-			return exitUsage
+			return usageError(a.stderr, resolveErr.Error())
 		}
 		listParams.TagID = resolved
 	}
-	if servings > 0 {
-		all = true
+	if opts.servings > 0 {
+		opts.all = true
 	}
 
-	if !all {
+	if !opts.all {
 		resp, err := api.Recipes(ctx, listParams)
 		if err != nil {
 			return a.handleAPIError(err)
 		}
-		items := filterRecipesByServings(resp.Items, servings)
-		if withCounts {
+		items := filterRecipesByServings(resp.Items, opts.servings)
+		if opts.withCounts {
 			counted, countErr := addRecipeCounts(ctx, api, items)
 			if countErr != nil {
 				return a.handleAPIError(countErr)
@@ -197,8 +307,8 @@ func (a *App) runRecipeList(args []string) int {
 		nextCursor = *resp.NextCursor
 	}
 
-	allItems = filterRecipesByServings(allItems, servings)
-	if withCounts {
+	allItems = filterRecipesByServings(allItems, opts.servings)
+	if opts.withCounts {
 		counted, err := addRecipeCounts(ctx, api, allItems)
 		if err != nil {
 			return a.handleAPIError(err)
@@ -220,43 +330,28 @@ func (a *App) runRecipeGet(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("recipe get", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
+	flags := recipeGetFlagSet(a.stderr)
 
 	id, err := parseIDArgs(flags, args)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 	if id == "" {
-		writeLine(a.stderr, "recipe id is required")
-		return exitUsage
+		return usageError(a.stderr, "recipe id is required")
 	}
 	id = strings.TrimSpace(id)
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	resolvedID, err := resolveRecipeID(ctx, api, id)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 
 	resp, err := api.Recipe(ctx, resolvedID)
@@ -273,62 +368,36 @@ func (a *App) runRecipeCreate(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("recipe create", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var filePath string
-	var useStdin bool
-	var interactive bool
-	var allowDuplicate bool
-	flags.StringVar(&filePath, "file", "", "Path to recipe JSON")
-	flags.BoolVar(&useStdin, "stdin", false, "Read recipe JSON from stdin")
-	flags.BoolVar(&interactive, "interactive", false, "Create recipe with interactive prompts")
-	flags.BoolVar(&allowDuplicate, "allow-duplicate", false, "Allow duplicate recipe titles")
-
+	flags, opts := recipeCreateFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
-	filePath = strings.TrimSpace(filePath)
-	if interactive && (filePath != "" || useStdin) {
-		writeLine(a.stderr, "interactive cannot be combined with --file or --stdin")
-		return exitUsage
+	opts.filePath = strings.TrimSpace(opts.filePath)
+	if opts.interactive && (opts.filePath != "" || opts.useStdin) {
+		return usageError(a.stderr, "interactive cannot be combined with --file or --stdin")
 	}
-	if !interactive && (filePath == "" && !useStdin) {
-		writeLine(a.stderr, "provide --file, --stdin, or --interactive")
-		return exitUsage
+	if !opts.interactive && (opts.filePath == "" && !opts.useStdin) {
+		return usageError(a.stderr, "provide --file, --stdin, or --interactive")
 	}
-	if !interactive && filePath != "" && useStdin {
-		writeLine(a.stderr, "provide --file or --stdin")
-		return exitUsage
-	}
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
+	if !opts.interactive && opts.filePath != "" && opts.useStdin {
+		return usageError(a.stderr, "provide --file or --stdin")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	var payload json.RawMessage
-	if interactive {
+	if opts.interactive {
 		interactivePayload, buildErr := buildRecipePayloadInteractive(a.stdin, a.stderr, ctx, api)
 		if buildErr != nil {
-			writeLine(a.stderr, buildErr)
-			return exitUsage
+			return usageError(a.stderr, buildErr.Error())
 		}
-		if dupErr := ensureUniqueRecipeTitle(ctx, api, interactivePayload.Title, allowDuplicate); dupErr != nil {
+		if dupErr := ensureUniqueRecipeTitle(ctx, api, interactivePayload.Title, opts.allowDuplicate); dupErr != nil {
 			writeLine(a.stderr, dupErr)
 			return exitConflict
 		}
@@ -340,21 +409,19 @@ func (a *App) runRecipeCreate(args []string) int {
 		payload = raw
 	} else {
 		var readErr error
-		if useStdin {
+		if opts.useStdin {
 			payload, readErr = readJSONReader(a.stdin)
 		} else {
-			payload, readErr = readJSONFile(filePath)
+			payload, readErr = readJSONFile(opts.filePath)
 		}
 		if readErr != nil {
-			writeLine(a.stderr, readErr)
-			return exitUsage
+			return usageError(a.stderr, readErr.Error())
 		}
 		title, titleErr := recipeTitleFromJSON(payload)
 		if titleErr != nil {
-			writeLine(a.stderr, titleErr)
-			return exitUsage
+			return usageError(a.stderr, titleErr.Error())
 		}
-		if dupErr := ensureUniqueRecipeTitle(ctx, api, title, allowDuplicate); dupErr != nil {
+		if dupErr := ensureUniqueRecipeTitle(ctx, api, title, opts.allowDuplicate); dupErr != nil {
 			writeLine(a.stderr, dupErr)
 			return exitConflict
 		}
@@ -374,64 +441,41 @@ func (a *App) runRecipeUpdate(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("recipe update", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var filePath string
-	var useStdin bool
-	flags.StringVar(&filePath, "file", "", "Path to recipe JSON")
-	flags.BoolVar(&useStdin, "stdin", false, "Read recipe JSON from stdin")
-
+	flags, opts := recipeUpdateFlagSet(a.stderr)
 	id, err := parseIDArgs(flags, args)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 	if id == "" {
-		writeLine(a.stderr, "recipe id is required")
-		return exitUsage
+		return usageError(a.stderr, "recipe id is required")
 	}
 	id = strings.TrimSpace(id)
-	filePath = strings.TrimSpace(filePath)
-	if (filePath == "" && !useStdin) || (filePath != "" && useStdin) {
-		writeLine(a.stderr, "provide --file or --stdin")
-		return exitUsage
+	opts.filePath = strings.TrimSpace(opts.filePath)
+	if (opts.filePath == "" && !opts.useStdin) || (opts.filePath != "" && opts.useStdin) {
+		return usageError(a.stderr, "provide --file or --stdin")
 	}
 
 	var payload json.RawMessage
-	if useStdin {
+	if opts.useStdin {
 		payload, err = readJSONReader(a.stdin)
 	} else {
-		payload, err = readJSONFile(filePath)
+		payload, err = readJSONFile(opts.filePath)
 	}
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
-	}
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
+		return usageError(a.stderr, err.Error())
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	resolvedID, err := resolveRecipeID(ctx, api, id)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 
 	resp, err := api.UpdateRecipe(ctx, resolvedID, payload)
@@ -448,44 +492,29 @@ func (a *App) runRecipeInit(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("recipe init", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
+	flags := recipeInitFlagSet(a.stderr)
 
 	id, err := parseIDArgs(flags, args)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
-	}
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+		return usageError(a.stderr, err.Error())
 	}
 
 	if id == "" {
 		return writeOutput(a.stdout, a.cfg.Output, recipeTemplatePayload())
-	}
-
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
 	}
 	id = strings.TrimSpace(id)
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	resolvedID, err := resolveRecipeID(ctx, api, id)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 
 	recipe, err := api.Recipe(ctx, resolvedID)
@@ -503,14 +532,12 @@ func (a *App) runRecipeTemplate(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("recipe template", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
+	flags := recipeTemplateFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
 	if flags.NArg() > 0 {
-		writeLine(a.stderr, "template does not accept arguments")
-		return exitUsage
+		return usageError(a.stderr, "template does not accept arguments")
 	}
 	return writeOutput(a.stdout, a.cfg.Output, recipeTemplatePayload())
 }
@@ -521,43 +548,28 @@ func (a *App) runRecipeExport(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("recipe export", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
+	flags := recipeExportFlagSet(a.stderr)
 
 	id, err := parseIDArgs(flags, args)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 	if id == "" {
-		writeLine(a.stderr, "recipe id is required")
-		return exitUsage
+		return usageError(a.stderr, "recipe id is required")
 	}
 	id = strings.TrimSpace(id)
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	resolvedID, err := resolveRecipeID(ctx, api, id)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 
 	recipe, err := api.Recipe(ctx, resolvedID)
@@ -574,78 +586,53 @@ func (a *App) runRecipeImport(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("recipe import", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var filePath string
-	var useStdin bool
-	var allowDuplicate bool
-	flags.StringVar(&filePath, "file", "", "Path to recipe JSON")
-	flags.BoolVar(&useStdin, "stdin", false, "Read recipe JSON from stdin")
-	flags.BoolVar(&allowDuplicate, "allow-duplicate", false, "Allow duplicate recipe titles")
-
+	flags, opts := recipeImportFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
-	filePath = strings.TrimSpace(filePath)
-	if filePath == "" && !useStdin {
+	opts.filePath = strings.TrimSpace(opts.filePath)
+	if opts.filePath == "" && !opts.useStdin {
 		if !isTerminal(a.stdin) {
-			useStdin = true
+			opts.useStdin = true
 		} else {
-			writeLine(a.stderr, "provide --file or --stdin")
-			return exitUsage
+			return usageError(a.stderr, "provide --file or --stdin")
 		}
 	}
-	if filePath != "" && useStdin {
-		writeLine(a.stderr, "provide --file or --stdin")
-		return exitUsage
+	if opts.filePath != "" && opts.useStdin {
+		return usageError(a.stderr, "provide --file or --stdin")
 	}
 
 	var raw []byte
 	var err error
-	if useStdin {
+	if opts.useStdin {
 		raw, err = readRawJSONReader(a.stdin)
 	} else {
-		raw, err = readRawJSONFile(filePath)
+		raw, err = readRawJSONFile(opts.filePath)
 	}
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 
 	payloads, err := splitJSONPayloads(raw)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
-	}
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
+		return usageError(a.stderr, err.Error())
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	results := make([]recipeImportItemResult, 0, len(payloads))
 	for i, payload := range payloads {
 		title, titleErr := recipeTitleFromJSON(payload)
 		if titleErr != nil {
-			writeLine(a.stderr, fmt.Sprintf("payload %d: %v", i+1, titleErr))
-			return exitUsage
+			return usageErrorf(a.stderr, "payload %d: %v", i+1, titleErr)
 		}
-		if err := ensureUniqueRecipeTitle(ctx, api, title, allowDuplicate); err != nil {
+		if err := ensureUniqueRecipeTitle(ctx, api, title, opts.allowDuplicate); err != nil {
 			writeLine(a.stderr, fmt.Sprintf("payload %d: %v", i+1, err))
 			return exitConflict
 		}
@@ -670,39 +657,25 @@ func (a *App) runRecipeTag(args []string) int {
 
 	id, tagNames, replace, createMissing, err := parseRecipeTagArgs(args)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
-	}
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
+		return usageError(a.stderr, err.Error())
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	resolvedID, err := resolveRecipeID(ctx, api, id)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 
 	tagIDs, err := resolveTagIDsByName(ctx, api, tagNames, createMissing)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 
 	recipe, err := api.Recipe(ctx, resolvedID)
@@ -737,48 +710,27 @@ func (a *App) runRecipeClone(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("recipe clone", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var titleOverride string
-	var allowDuplicate bool
-	flags.StringVar(&titleOverride, "title", "", "Title for the cloned recipe")
-	flags.BoolVar(&allowDuplicate, "allow-duplicate", false, "Allow duplicate recipe titles")
-
+	flags, opts := recipeCloneFlagSet(a.stderr)
 	id, err := parseIDArgs(flags, args)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 	if id == "" {
-		writeLine(a.stderr, "recipe id is required")
-		return exitUsage
+		return usageError(a.stderr, "recipe id is required")
 	}
 	id = strings.TrimSpace(id)
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	resolvedID, err := resolveRecipeID(ctx, api, id)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 
 	recipe, err := api.Recipe(ctx, resolvedID)
@@ -787,13 +739,13 @@ func (a *App) runRecipeClone(args []string) int {
 	}
 
 	payload := toUpsertPayload(recipe)
-	title := strings.TrimSpace(titleOverride)
+	title := strings.TrimSpace(opts.titleOverride)
 	if title == "" {
 		title = fmt.Sprintf("%s (copy)", payload.Title)
 	}
 	payload.Title = title
 
-	if dupErr := ensureUniqueRecipeTitle(ctx, api, payload.Title, allowDuplicate); dupErr != nil {
+	if dupErr := ensureUniqueRecipeTitle(ctx, api, payload.Title, opts.allowDuplicate); dupErr != nil {
 		writeLine(a.stderr, dupErr)
 		return exitConflict
 	}
@@ -818,46 +770,27 @@ func (a *App) runRecipeEdit(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("recipe edit", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var editorOverride string
-	flags.StringVar(&editorOverride, "editor", "", "Editor command")
-
+	flags, opts := recipeEditFlagSet(a.stderr)
 	id, err := parseIDArgs(flags, args)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 	if id == "" {
-		writeLine(a.stderr, "recipe id is required")
-		return exitUsage
+		return usageError(a.stderr, "recipe id is required")
 	}
 	id = strings.TrimSpace(id)
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	resolvedID, err := resolveRecipeID(ctx, api, id)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 
 	recipe, err := api.Recipe(ctx, resolvedID)
@@ -889,7 +822,7 @@ func (a *App) runRecipeEdit(args []string) int {
 		return exitError
 	}
 
-	editor := strings.TrimSpace(editorOverride)
+	editor := strings.TrimSpace(opts.editorOverride)
 	if editor == "" {
 		editor = strings.TrimSpace(os.Getenv("VISUAL"))
 	}
@@ -921,8 +854,7 @@ func (a *App) runRecipeEdit(args []string) int {
 
 	updated, err := readJSONFile(tempFile)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 
 	resp, err := api.UpdateRecipe(ctx, resolvedID, updated)
@@ -939,50 +871,30 @@ func (a *App) runRecipeDelete(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("recipe delete", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var yes bool
-	flags.BoolVar(&yes, "yes", false, "Confirm recipe deletion")
-
+	flags, opts := recipeDeleteFlagSet(a.stderr)
 	id, err := parseIDArgs(flags, args)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 	if id == "" {
-		writeLine(a.stderr, "recipe id is required")
-		return exitUsage
+		return usageError(a.stderr, "recipe id is required")
 	}
-	if !yes {
-		writeLine(a.stderr, "confirmation required; re-run with --yes")
-		return exitUsage
+	if !opts.yes {
+		return usageError(a.stderr, "confirmation required; re-run with --yes")
 	}
 	id = strings.TrimSpace(id)
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	resolvedID, err := resolveRecipeID(ctx, api, id)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 
 	if err := api.DeleteRecipe(ctx, resolvedID); err != nil {
@@ -1001,50 +913,30 @@ func (a *App) runRecipeRestore(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("recipe restore", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var yes bool
-	flags.BoolVar(&yes, "yes", false, "Confirm recipe restore")
-
+	flags, opts := recipeRestoreFlagSet(a.stderr)
 	id, err := parseIDArgs(flags, args)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 	if id == "" {
-		writeLine(a.stderr, "recipe id is required")
-		return exitUsage
+		return usageError(a.stderr, "recipe id is required")
 	}
-	if !yes {
-		writeLine(a.stderr, "confirmation required; re-run with --yes")
-		return exitUsage
+	if !opts.yes {
+		return usageError(a.stderr, "confirmation required; re-run with --yes")
 	}
 	id = strings.TrimSpace(id)
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	resolvedID, err := resolveRecipeID(ctx, api, id)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 
 	if err := api.RestoreRecipe(ctx, resolvedID); err != nil {
@@ -1067,11 +959,11 @@ func parseRecipeTagArgs(args []string) (string, []string, bool, bool, error) {
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch arg {
-		case "--replace":
+		case "--" + recipeTagFlagReplace:
 			replace = true
-		case "--create-missing":
+		case "--" + recipeTagFlagCreateMissing:
 			createMissing = true
-		case "--no-create-missing":
+		case "--" + recipeTagFlagNoCreateMissing:
 			createMissing = false
 		case "--":
 			tags = append(tags, args[i+1:]...)

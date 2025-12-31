@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/saiaj/cooking_app/backend/internal/httpapi/response"
 )
 
@@ -15,7 +16,8 @@ type recipeIngredientRequest struct {
 	Quantity     *float64 `json:"quantity"`
 	QuantityText *string  `json:"quantity_text"`
 	Unit         *string  `json:"unit"`
-	Item         string   `json:"item"`
+	ItemID       *string  `json:"item_id"`
+	ItemName     *string  `json:"item_name"`
 	Prep         *string  `json:"prep"`
 	Notes        *string  `json:"notes"`
 	OriginalText *string  `json:"original_text"`
@@ -85,11 +87,28 @@ func validateCreateRecipeRequest(req createRecipeRequest) []response.FieldError 
 			positionsSeen[ing.Position] = struct{}{}
 		}
 
-		if strings.TrimSpace(ing.Item) == "" {
+		itemID := ""
+		if ing.ItemID != nil {
+			itemID = strings.TrimSpace(*ing.ItemID)
+		}
+		itemName := ""
+		if ing.ItemName != nil {
+			itemName = strings.TrimSpace(*ing.ItemName)
+		}
+
+		if itemID == "" && itemName == "" {
 			errs = append(errs, response.FieldError{
-				Field:   fmt.Sprintf("ingredients[%d].item", i),
-				Message: "item is required",
+				Field:   fmt.Sprintf("ingredients[%d].item_id", i),
+				Message: "item_id or item_name is required",
 			})
+		}
+		if itemID != "" {
+			if _, err := uuid.Parse(itemID); err != nil {
+				errs = append(errs, response.FieldError{
+					Field:   fmt.Sprintf("ingredients[%d].item_id", i),
+					Message: "item_id is invalid",
+				})
+			}
 		}
 	}
 

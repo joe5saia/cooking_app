@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"flag"
 )
 
 func (a *App) runHealth(args []string) int {
@@ -11,8 +10,7 @@ func (a *App) runHealth(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("health", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
+	flags := newFlagSet("health", a.stderr, printHealthUsage)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -40,14 +38,12 @@ func (a *App) runVersion(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("version", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
+	flags := newFlagSet("version", a.stderr, printVersionUsage)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
 	if flags.NArg() != 0 {
-		writeLine(a.stderr, "version does not accept arguments")
-		return exitUsage
+		return usageError(a.stderr, "version does not accept arguments")
 	}
 
 	info := versionInfo{

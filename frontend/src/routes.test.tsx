@@ -44,6 +44,24 @@ describe('routes', () => {
             headers: { 'content-type': 'application/json' },
           })
         }
+        if (url.includes('/api/v1/shopping-lists')) {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        if (url.endsWith('/api/v1/aisles')) {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        if (url.includes('/api/v1/items')) {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
         return new Response(null, { status: 404 })
       }),
     )
@@ -70,6 +88,16 @@ describe('routes', () => {
     await user.click(screen.getByRole('link', { name: /meal plan/i }))
     expect(
       await screen.findByRole('heading', { name: /meal plan/i }),
+    ).toBeVisible()
+
+    await user.click(screen.getByRole('link', { name: /shopping lists/i }))
+    expect(
+      await screen.findByRole('heading', { name: /shopping lists/i }),
+    ).toBeVisible()
+
+    await user.click(screen.getByRole('link', { name: /items/i }))
+    expect(
+      await screen.findByRole('heading', { name: /items/i, level: 1 }),
     ).toBeVisible()
 
     await user.click(screen.getByRole('link', { name: /settings/i }))

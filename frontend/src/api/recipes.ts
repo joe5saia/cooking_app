@@ -1,4 +1,5 @@
 import { apiFetchJSON } from './client'
+import type { Item } from './items'
 
 export type RecipeTag = {
   id: string
@@ -30,7 +31,7 @@ export type RecipeIngredient = {
   quantity: number | null
   quantity_text: string | null
   unit: string | null
-  item: string
+  item: Item
   prep: string | null
   notes: string | null
   original_text: string | null
@@ -47,7 +48,8 @@ export type RecipeIngredientUpsert = {
   quantity: number | null
   quantity_text: string | null
   unit: string | null
-  item: string
+  item_id: string | null
+  item_name: string | null
   prep: string | null
   notes: string | null
   original_text: string | null

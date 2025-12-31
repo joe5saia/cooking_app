@@ -3,10 +3,50 @@ package app
 import (
 	"context"
 	"flag"
-	"fmt"
+	"io"
 	"strings"
-	"time"
 )
+
+type mealPlanListFlags struct {
+	start string
+	end   string
+}
+
+type mealPlanCreateFlags struct {
+	date     string
+	recipeID string
+}
+
+type mealPlanDeleteFlags struct {
+	date     string
+	recipeID string
+	yes      bool
+}
+
+func mealPlanListFlagSet(out io.Writer) (*flag.FlagSet, *mealPlanListFlags) {
+	opts := &mealPlanListFlags{}
+	flags := newFlagSet("meal-plan list", out, printMealPlanListUsage)
+	flags.StringVar(&opts.start, "start", "", "Start date (YYYY-MM-DD)")
+	flags.StringVar(&opts.end, "end", "", "End date (YYYY-MM-DD)")
+	return flags, opts
+}
+
+func mealPlanCreateFlagSet(out io.Writer) (*flag.FlagSet, *mealPlanCreateFlags) {
+	opts := &mealPlanCreateFlags{}
+	flags := newFlagSet("meal-plan create", out, printMealPlanCreateUsage)
+	flags.StringVar(&opts.date, "date", "", "Meal plan date (YYYY-MM-DD)")
+	flags.StringVar(&opts.recipeID, "recipe-id", "", "Recipe id")
+	return flags, opts
+}
+
+func mealPlanDeleteFlagSet(out io.Writer) (*flag.FlagSet, *mealPlanDeleteFlags) {
+	opts := &mealPlanDeleteFlags{}
+	flags := newFlagSet("meal-plan delete", out, printMealPlanDeleteUsage)
+	flags.StringVar(&opts.date, "date", "", "Meal plan date (YYYY-MM-DD)")
+	flags.StringVar(&opts.recipeID, "recipe-id", "", "Recipe id")
+	flags.BoolVar(&opts.yes, "yes", false, "Confirm meal plan deletion")
+	return flags, opts
+}
 
 func (a *App) runMealPlan(args []string) int {
 	if len(args) > 0 && isHelpFlag(args[0]) {
@@ -26,7 +66,7 @@ func (a *App) runMealPlan(args []string) int {
 	case commandDelete:
 		return a.runMealPlanDelete(args[1:])
 	default:
-		writef(a.stderr, "unknown meal-plan command: %s\n", args[0])
+		usageErrorf(a.stderr, "unknown meal-plan command: %s", args[0])
 		printMealPlanUsage(a.stderr)
 		return exitUsage
 	}
@@ -38,50 +78,29 @@ func (a *App) runMealPlanList(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("meal-plan list", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var start string
-	var end string
-	flags.StringVar(&start, "start", "", "Start date (YYYY-MM-DD)")
-	flags.StringVar(&end, "end", "", "End date (YYYY-MM-DD)")
-
+	flags, opts := mealPlanListFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
 
-	startDate, err := parseISODate("start", start)
+	startDate, err := parseISODate("start", opts.start)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
-	endDate, err := parseISODate("end", end)
+	endDate, err := parseISODate("end", opts.end)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 	if startDate.After(endDate) {
-		writeLine(a.stderr, "end must be on or after start")
-		return exitUsage
-	}
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
+		return usageError(a.stderr, "end must be on or after start")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	resp, err := api.MealPlans(ctx, startDate.Format(isoDateLayout), endDate.Format(isoDateLayout))
@@ -98,49 +117,29 @@ func (a *App) runMealPlanCreate(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("meal-plan create", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var date string
-	var recipeID string
-	flags.StringVar(&date, "date", "", "Meal plan date (YYYY-MM-DD)")
-	flags.StringVar(&recipeID, "recipe-id", "", "Recipe id")
-
+	flags, opts := mealPlanCreateFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
 
-	planDate, err := parseISODate("date", date)
+	planDate, err := parseISODate("date", opts.date)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
-	recipeID = strings.TrimSpace(recipeID)
-	if recipeID == "" {
-		writeLine(a.stderr, "recipe-id is required")
-		return exitUsage
-	}
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
+	opts.recipeID = strings.TrimSpace(opts.recipeID)
+	if opts.recipeID == "" {
+		return usageError(a.stderr, "recipe-id is required")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
-	resp, err := api.CreateMealPlan(ctx, planDate.Format(isoDateLayout), recipeID)
+	resp, err := api.CreateMealPlan(ctx, planDate.Format(isoDateLayout), opts.recipeID)
 	if err != nil {
 		return a.handleAPIError(err)
 	}
@@ -154,74 +153,38 @@ func (a *App) runMealPlanDelete(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("meal-plan delete", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var date string
-	var recipeID string
-	var yes bool
-	flags.StringVar(&date, "date", "", "Meal plan date (YYYY-MM-DD)")
-	flags.StringVar(&recipeID, "recipe-id", "", "Recipe id")
-	flags.BoolVar(&yes, "yes", false, "Confirm meal plan deletion")
-
+	flags, opts := mealPlanDeleteFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
 
-	planDate, err := parseISODate("date", date)
+	planDate, err := parseISODate("date", opts.date)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
-	recipeID = strings.TrimSpace(recipeID)
-	if recipeID == "" {
-		writeLine(a.stderr, "recipe-id is required")
-		return exitUsage
+	opts.recipeID = strings.TrimSpace(opts.recipeID)
+	if opts.recipeID == "" {
+		return usageError(a.stderr, "recipe-id is required")
 	}
-	if !yes {
-		writeLine(a.stderr, "confirmation required; re-run with --yes")
-		return exitUsage
-	}
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
+	if !opts.yes {
+		return usageError(a.stderr, "confirmation required; re-run with --yes")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
-	if err := api.DeleteMealPlan(ctx, planDate.Format(isoDateLayout), recipeID); err != nil {
+	if err := api.DeleteMealPlan(ctx, planDate.Format(isoDateLayout), opts.recipeID); err != nil {
 		return a.handleAPIError(err)
 	}
 
 	return writeOutput(a.stdout, a.cfg.Output, mealPlanDeleteResult{
 		Date:     planDate.Format(isoDateLayout),
-		RecipeID: recipeID,
+		RecipeID: opts.recipeID,
 		Deleted:  true,
 	})
-}
-
-// parseISODate validates a YYYY-MM-DD date string and returns its time value.
-func parseISODate(field, raw string) (time.Time, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return time.Time{}, fmt.Errorf("%s is required", field)
-	}
-	parsed, err := time.Parse(isoDateLayout, trimmed)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("%s must be YYYY-MM-DD", field)
-	}
-	return parsed, nil
 }

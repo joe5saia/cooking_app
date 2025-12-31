@@ -92,7 +92,7 @@ INSERT INTO recipe_ingredients (
   quantity,
   quantity_text,
   unit,
-  item,
+  item_id,
   prep,
   notes,
   original_text,
@@ -109,7 +109,7 @@ type CreateRecipeIngredientParams struct {
 	Quantity     pgtype.Numeric `json:"quantity"`
 	QuantityText pgtype.Text    `json:"quantity_text"`
 	Unit         pgtype.Text    `json:"unit"`
-	Item         string         `json:"item"`
+	ItemID       pgtype.UUID    `json:"item_id"`
 	Prep         pgtype.Text    `json:"prep"`
 	Notes        pgtype.Text    `json:"notes"`
 	OriginalText pgtype.Text    `json:"original_text"`
@@ -124,7 +124,7 @@ func (q *Queries) CreateRecipeIngredient(ctx context.Context, arg CreateRecipeIn
 		arg.Quantity,
 		arg.QuantityText,
 		arg.Unit,
-		arg.Item,
+		arg.ItemID,
 		arg.Prep,
 		arg.Notes,
 		arg.OriginalText,
@@ -264,21 +264,68 @@ func (q *Queries) GetRecipeDeletedAtByID(ctx context.Context, id pgtype.UUID) (p
 }
 
 const listRecipeIngredientsByRecipeID = `-- name: ListRecipeIngredientsByRecipeID :many
-SELECT id, recipe_id, position, quantity, quantity_text, unit, item, prep, notes, original_text, created_at, created_by, updated_at, updated_by
-FROM recipe_ingredients
-WHERE recipe_id = $1
-ORDER BY position ASC
+SELECT
+  ri.id,
+  ri.recipe_id,
+  ri.position,
+  ri.quantity,
+  ri.quantity_text,
+  ri.unit,
+  ri.item_id,
+  i.name AS item_name,
+  i.store_url AS item_store_url,
+  i.aisle_id AS item_aisle_id,
+  a.name AS aisle_name,
+  a.sort_group AS aisle_sort_group,
+  a.sort_order AS aisle_sort_order,
+  a.numeric_value AS aisle_numeric_value,
+  ri.prep,
+  ri.notes,
+  ri.original_text,
+  ri.created_at,
+  ri.created_by,
+  ri.updated_at,
+  ri.updated_by
+FROM recipe_ingredients ri
+JOIN items i ON i.id = ri.item_id
+LEFT JOIN grocery_aisles a ON a.id = i.aisle_id
+WHERE ri.recipe_id = $1
+ORDER BY ri.position ASC
 `
 
-func (q *Queries) ListRecipeIngredientsByRecipeID(ctx context.Context, recipeID pgtype.UUID) ([]RecipeIngredient, error) {
+type ListRecipeIngredientsByRecipeIDRow struct {
+	ID                pgtype.UUID        `json:"id"`
+	RecipeID          pgtype.UUID        `json:"recipe_id"`
+	Position          int32              `json:"position"`
+	Quantity          pgtype.Numeric     `json:"quantity"`
+	QuantityText      pgtype.Text        `json:"quantity_text"`
+	Unit              pgtype.Text        `json:"unit"`
+	ItemID            pgtype.UUID        `json:"item_id"`
+	ItemName          string             `json:"item_name"`
+	ItemStoreUrl      pgtype.Text        `json:"item_store_url"`
+	ItemAisleID       pgtype.UUID        `json:"item_aisle_id"`
+	AisleName         pgtype.Text        `json:"aisle_name"`
+	AisleSortGroup    pgtype.Int4        `json:"aisle_sort_group"`
+	AisleSortOrder    pgtype.Int4        `json:"aisle_sort_order"`
+	AisleNumericValue pgtype.Int4        `json:"aisle_numeric_value"`
+	Prep              pgtype.Text        `json:"prep"`
+	Notes             pgtype.Text        `json:"notes"`
+	OriginalText      pgtype.Text        `json:"original_text"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	CreatedBy         pgtype.UUID        `json:"created_by"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	UpdatedBy         pgtype.UUID        `json:"updated_by"`
+}
+
+func (q *Queries) ListRecipeIngredientsByRecipeID(ctx context.Context, recipeID pgtype.UUID) ([]ListRecipeIngredientsByRecipeIDRow, error) {
 	rows, err := q.db.Query(ctx, listRecipeIngredientsByRecipeID, recipeID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []RecipeIngredient{}
+	items := []ListRecipeIngredientsByRecipeIDRow{}
 	for rows.Next() {
-		var i RecipeIngredient
+		var i ListRecipeIngredientsByRecipeIDRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.RecipeID,
@@ -286,7 +333,14 @@ func (q *Queries) ListRecipeIngredientsByRecipeID(ctx context.Context, recipeID 
 			&i.Quantity,
 			&i.QuantityText,
 			&i.Unit,
-			&i.Item,
+			&i.ItemID,
+			&i.ItemName,
+			&i.ItemStoreUrl,
+			&i.ItemAisleID,
+			&i.AisleName,
+			&i.AisleSortGroup,
+			&i.AisleSortOrder,
+			&i.AisleNumericValue,
 			&i.Prep,
 			&i.Notes,
 			&i.OriginalText,

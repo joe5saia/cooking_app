@@ -72,6 +72,12 @@ describe('MealPlanPage', () => {
             headers: { 'content-type': 'application/json' },
           })
         }
+        if (url.includes('/api/v1/shopping-lists') && method === 'GET') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
         if (url.includes('/api/v1/meal-plans') && method === 'POST') {
           const body = JSON.parse(String(init?.body ?? '{}')) as {
             date?: string

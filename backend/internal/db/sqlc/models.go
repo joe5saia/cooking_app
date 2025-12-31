@@ -8,6 +8,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type GroceryAisle struct {
+	ID           pgtype.UUID        `json:"id"`
+	Name         string             `json:"name"`
+	SortGroup    int32              `json:"sort_group"`
+	SortOrder    int32              `json:"sort_order"`
+	NumericValue pgtype.Int4        `json:"numeric_value"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	CreatedBy    pgtype.UUID        `json:"created_by"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	UpdatedBy    pgtype.UUID        `json:"updated_by"`
+}
+
+type Item struct {
+	ID        pgtype.UUID        `json:"id"`
+	Name      string             `json:"name"`
+	StoreUrl  pgtype.Text        `json:"store_url"`
+	AisleID   pgtype.UUID        `json:"aisle_id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	CreatedBy pgtype.UUID        `json:"created_by"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	UpdatedBy pgtype.UUID        `json:"updated_by"`
+}
+
 type MealPlanEntry struct {
 	ID        pgtype.UUID        `json:"id"`
 	UserID    pgtype.UUID        `json:"user_id"`
@@ -64,7 +87,6 @@ type RecipeIngredient struct {
 	Quantity     pgtype.Numeric     `json:"quantity"`
 	QuantityText pgtype.Text        `json:"quantity_text"`
 	Unit         pgtype.Text        `json:"unit"`
-	Item         string             `json:"item"`
 	Prep         pgtype.Text        `json:"prep"`
 	Notes        pgtype.Text        `json:"notes"`
 	OriginalText pgtype.Text        `json:"original_text"`
@@ -72,6 +94,7 @@ type RecipeIngredient struct {
 	CreatedBy    pgtype.UUID        `json:"created_by"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 	UpdatedBy    pgtype.UUID        `json:"updated_by"`
+	ItemID       pgtype.UUID        `json:"item_id"`
 }
 
 type RecipeStep struct {
@@ -104,6 +127,32 @@ type Session struct {
 	CreatedBy  pgtype.UUID        `json:"created_by"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 	UpdatedBy  pgtype.UUID        `json:"updated_by"`
+}
+
+type ShoppingList struct {
+	ID        pgtype.UUID        `json:"id"`
+	ListDate  pgtype.Date        `json:"list_date"`
+	Name      string             `json:"name"`
+	Notes     pgtype.Text        `json:"notes"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	CreatedBy pgtype.UUID        `json:"created_by"`
+	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
+	UpdatedBy pgtype.UUID        `json:"updated_by"`
+}
+
+type ShoppingListItem struct {
+	ID             pgtype.UUID        `json:"id"`
+	ShoppingListID pgtype.UUID        `json:"shopping_list_id"`
+	ItemID         pgtype.UUID        `json:"item_id"`
+	Unit           pgtype.Text        `json:"unit"`
+	Quantity       pgtype.Numeric     `json:"quantity"`
+	QuantityText   pgtype.Text        `json:"quantity_text"`
+	IsPurchased    bool               `json:"is_purchased"`
+	PurchasedAt    pgtype.Timestamptz `json:"purchased_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	CreatedBy      pgtype.UUID        `json:"created_by"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	UpdatedBy      pgtype.UUID        `json:"updated_by"`
 }
 
 type Tag struct {

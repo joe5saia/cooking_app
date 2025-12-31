@@ -15,7 +15,7 @@ func TestValidateCreateRecipeRequest(t *testing.T) {
 			TotalTimeMinutes: 60,
 			TagIDs:           []string{"a"},
 			Ingredients: []recipeIngredientRequest{
-				{Position: 1, Item: "chicken"},
+				{Position: 1, ItemName: stringPtr("chicken")},
 			},
 			Steps: []recipeStepRequest{
 				{StepNumber: 1, Instruction: "boil"},
@@ -108,8 +108,8 @@ func TestValidateCreateRecipeRequest(t *testing.T) {
 			PrepTimeMinutes:  0,
 			TotalTimeMinutes: 0,
 			Ingredients: []recipeIngredientRequest{
-				{Position: 1, Item: "a"},
-				{Position: 1, Item: "b"},
+				{Position: 1, ItemName: stringPtr("a")},
+				{Position: 1, ItemName: stringPtr("b")},
 			},
 			Steps: []recipeStepRequest{
 				{StepNumber: 1, Instruction: "ok"},
@@ -118,6 +118,44 @@ func TestValidateCreateRecipeRequest(t *testing.T) {
 		errs := validateCreateRecipeRequest(req)
 		if !hasFieldError(errs, "ingredients") {
 			t.Fatalf("errs=%v, want ingredients error", errs)
+		}
+	})
+
+	t.Run("requires item_id or item_name", func(t *testing.T) {
+		req := createRecipeRequest{
+			Title:            "x",
+			Servings:         1,
+			PrepTimeMinutes:  0,
+			TotalTimeMinutes: 0,
+			Ingredients: []recipeIngredientRequest{
+				{Position: 1},
+			},
+			Steps: []recipeStepRequest{
+				{StepNumber: 1, Instruction: "ok"},
+			},
+		}
+		errs := validateCreateRecipeRequest(req)
+		if !hasFieldError(errs, "ingredients[0].item_id") {
+			t.Fatalf("errs=%v, want item error", errs)
+		}
+	})
+
+	t.Run("rejects invalid item_id", func(t *testing.T) {
+		req := createRecipeRequest{
+			Title:            "x",
+			Servings:         1,
+			PrepTimeMinutes:  0,
+			TotalTimeMinutes: 0,
+			Ingredients: []recipeIngredientRequest{
+				{Position: 1, ItemID: stringPtr("not-a-uuid")},
+			},
+			Steps: []recipeStepRequest{
+				{StepNumber: 1, Instruction: "ok"},
+			},
+		}
+		errs := validateCreateRecipeRequest(req)
+		if !hasFieldError(errs, "ingredients[0].item_id") {
+			t.Fatalf("errs=%v, want item_id error", errs)
 		}
 	})
 
@@ -146,4 +184,9 @@ func hasFieldError(errs []response.FieldError, field string) bool {
 		}
 	}
 	return false
+}
+
+// stringPtr returns a string pointer for inline literals.
+func stringPtr(value string) *string {
+	return &value
 }

@@ -70,6 +70,39 @@ func routes(app *App) http.Handler {
 			r.Delete("/{id}", app.handle(app.handleTagsDelete))
 		})
 
+		r.Route("/aisles", func(r chi.Router) {
+			r.Use(app.authMiddleware)
+			r.Get("/", app.handle(app.handleAislesList))
+			r.Get("/{id}", app.handle(app.handleAislesGet))
+			r.Post("/", app.handle(app.handleAislesCreate))
+			r.Put("/{id}", app.handle(app.handleAislesUpdate))
+			r.Delete("/{id}", app.handle(app.handleAislesDelete))
+		})
+
+		r.Route("/items", func(r chi.Router) {
+			r.Use(app.authMiddleware)
+			r.Get("/", app.handle(app.handleItemsList))
+			r.Get("/{id}", app.handle(app.handleItemsGet))
+			r.Post("/", app.handle(app.handleItemsCreate))
+			r.Put("/{id}", app.handle(app.handleItemsUpdate))
+			r.Delete("/{id}", app.handle(app.handleItemsDelete))
+		})
+
+		r.Route("/shopping-lists", func(r chi.Router) {
+			r.Use(app.authMiddleware)
+			r.Get("/", app.handle(app.handleShoppingListsList))
+			r.Post("/", app.handle(app.handleShoppingListsCreate))
+			r.Get("/{id}", app.handle(app.handleShoppingListsGet))
+			r.Put("/{id}", app.handle(app.handleShoppingListsUpdate))
+			r.Delete("/{id}", app.handle(app.handleShoppingListsDelete))
+			r.Get("/{id}/items", app.handle(app.handleShoppingListItemsList))
+			r.Post("/{id}/items", app.handle(app.handleShoppingListItemsAdd))
+			r.Post("/{id}/items/from-recipes", app.handle(app.handleShoppingListItemsAddFromRecipes))
+			r.Post("/{id}/items/from-meal-plan", app.handle(app.handleShoppingListItemsAddFromMealPlan))
+			r.Patch("/{id}/items/{item_id}", app.handle(app.handleShoppingListItemsUpdate))
+			r.Delete("/{id}/items/{item_id}", app.handle(app.handleShoppingListItemsDelete))
+		})
+
 		r.Route("/recipe-books", func(r chi.Router) {
 			r.Use(app.authMiddleware)
 			r.Get("/", app.handle(app.handleRecipeBooksList))

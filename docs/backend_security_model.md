@@ -130,3 +130,15 @@ Decision:
 - The endpoint always returns `204` and clears the session cookie.
 - If a session cookie is present, its server-side session row is deleted (best-effort).
 - If a bearer PAT is present, no token is revoked. Revocation is done via `DELETE /api/v1/tokens/{id}`.
+
+## Auth guard linting
+
+To prevent accidental unauthenticated handlers, the backend runs an AST-Grep rule that flags
+`httpapi` handler methods missing `authInfoFromRequest`. Public handlers (login/healthz)
+are explicitly allowlisted in the rule.
+
+Run locally:
+
+```bash
+make -C backend ast-grep
+```

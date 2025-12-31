@@ -3,8 +3,10 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -26,6 +28,10 @@ type recipeWorkflowQueries interface {
 	CreateRecipeIngredient(ctx context.Context, arg sqlc.CreateRecipeIngredientParams) error
 	CreateRecipeStep(ctx context.Context, arg sqlc.CreateRecipeStepParams) error
 	CreateRecipeTag(ctx context.Context, arg sqlc.CreateRecipeTagParams) error
+
+	GetItemByID(ctx context.Context, id pgtype.UUID) (sqlc.GetItemByIDRow, error)
+	GetItemByName(ctx context.Context, name string) (sqlc.Item, error)
+	CreateItem(ctx context.Context, arg sqlc.CreateItemParams) (sqlc.Item, error)
 
 	GetRecipeDeletedAtByID(ctx context.Context, id pgtype.UUID) (pgtype.Timestamptz, error)
 	UpdateRecipeByID(ctx context.Context, arg sqlc.UpdateRecipeByIDParams) (sqlc.Recipe, error)
@@ -88,6 +94,62 @@ func mapRecipeUsecaseError(err error) error {
 	return errInternal(err)
 }
 
+// resolveIngredientItemID validates item references and creates items when needed.
+func resolveIngredientItemID(ctx context.Context, q recipeWorkflowQueries, actorID pgtype.UUID, ingredient recipeIngredientRequest, index int) (pgtype.UUID, error) {
+	itemID := ""
+	if ingredient.ItemID != nil {
+		itemID = strings.TrimSpace(*ingredient.ItemID)
+	}
+	if itemID != "" {
+		parsed, err := uuid.Parse(itemID)
+		if err != nil {
+			return pgtype.UUID{}, recipeValidationField(fmt.Sprintf("ingredients[%d].item_id", index), "invalid item_id")
+		}
+		pgID := pgtype.UUID{Bytes: parsed, Valid: true}
+		if _, err := q.GetItemByID(ctx, pgID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return pgtype.UUID{}, recipeValidationField(fmt.Sprintf("ingredients[%d].item_id", index), "item does not exist")
+			}
+			return pgtype.UUID{}, err
+		}
+		return pgID, nil
+	}
+
+	itemName := ""
+	if ingredient.ItemName != nil {
+		itemName = strings.TrimSpace(*ingredient.ItemName)
+	}
+	if itemName == "" {
+		return pgtype.UUID{}, recipeValidationField(fmt.Sprintf("ingredients[%d].item_name", index), "item_name is required")
+	}
+
+	row, err := q.GetItemByName(ctx, itemName)
+	if err != nil {
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return pgtype.UUID{}, err
+		}
+		created, createErr := q.CreateItem(ctx, sqlc.CreateItemParams{
+			Name:      itemName,
+			StoreUrl:  pgtype.Text{},
+			AisleID:   pgtype.UUID{},
+			CreatedBy: actorID,
+			UpdatedBy: actorID,
+		})
+		if createErr != nil {
+			if isPGUniqueViolation(createErr) {
+				existing, lookupErr := q.GetItemByName(ctx, itemName)
+				if lookupErr != nil {
+					return pgtype.UUID{}, lookupErr
+				}
+				return existing.ID, nil
+			}
+			return pgtype.UUID{}, createErr
+		}
+		return created.ID, nil
+	}
+	return row.ID, nil
+}
+
 // createRecipeUsecase performs the create-recipe transactional workflow.
 func createRecipeUsecase(ctx context.Context, workflows recipeWorkflows, actorID pgtype.UUID, req createRecipeRequest) (pgtype.UUID, error) {
 	recipeBookID, err := uuidPtrToPG(req.RecipeBookID)
@@ -145,7 +207,7 @@ func createRecipeUsecase(ctx context.Context, workflows recipeWorkflows, actorID
 		}
 		recipeID = row.ID
 
-		for _, ing := range req.Ingredients {
+		for i, ing := range req.Ingredients {
 			position32, ok := intToInt32Checked(ing.Position)
 			if !ok {
 				return recipeValidationField("ingredients.position", "position is too large")
@@ -154,13 +216,17 @@ func createRecipeUsecase(ctx context.Context, workflows recipeWorkflows, actorID
 			if quantityErr != nil {
 				return recipeValidationField("ingredients.quantity", "invalid quantity")
 			}
+			itemID, itemErr := resolveIngredientItemID(ctx, q, actorID, ing, i)
+			if itemErr != nil {
+				return itemErr
+			}
 			if createIngredientErr := q.CreateRecipeIngredient(ctx, sqlc.CreateRecipeIngredientParams{
 				RecipeID:     recipeID,
 				Position:     position32,
 				Quantity:     quantity,
 				QuantityText: textPtrToPG(ing.QuantityText),
 				Unit:         textPtrToPG(ing.Unit),
-				Item:         strings.TrimSpace(ing.Item),
+				ItemID:       itemID,
 				Prep:         textPtrToPG(ing.Prep),
 				Notes:        textPtrToPG(ing.Notes),
 				OriginalText: textPtrToPG(ing.OriginalText),
@@ -282,7 +348,7 @@ func updateRecipeUsecase(ctx context.Context, workflows recipeWorkflows, actorID
 			return err
 		}
 
-		for _, ing := range req.Ingredients {
+		for i, ing := range req.Ingredients {
 			position32, ok := intToInt32Checked(ing.Position)
 			if !ok {
 				return recipeValidationField("ingredients.position", "position is too large")
@@ -291,13 +357,17 @@ func updateRecipeUsecase(ctx context.Context, workflows recipeWorkflows, actorID
 			if quantityErr != nil {
 				return recipeValidationField("ingredients.quantity", "invalid quantity")
 			}
+			itemID, itemErr := resolveIngredientItemID(ctx, q, actorID, ing, i)
+			if itemErr != nil {
+				return itemErr
+			}
 			if createIngredientErr := q.CreateRecipeIngredient(ctx, sqlc.CreateRecipeIngredientParams{
 				RecipeID:     recipeID,
 				Position:     position32,
 				Quantity:     quantity,
 				QuantityText: textPtrToPG(ing.QuantityText),
 				Unit:         textPtrToPG(ing.Unit),
-				Item:         strings.TrimSpace(ing.Item),
+				ItemID:       itemID,
 				Prep:         textPtrToPG(ing.Prep),
 				Notes:        textPtrToPG(ing.Notes),
 				OriginalText: textPtrToPG(ing.OriginalText),

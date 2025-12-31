@@ -7,6 +7,8 @@ import { getMe } from '../api/auth'
 const navItems = [
   { to: '/recipes', label: 'Recipes' },
   { to: '/meal-plan', label: 'Meal Plan' },
+  { to: '/shopping-lists', label: 'Shopping Lists' },
+  { to: '/items', label: 'Items' },
   { to: '/books', label: 'Books' },
   { to: '/tags', label: 'Tags' },
   { to: '/settings', label: 'Settings' },

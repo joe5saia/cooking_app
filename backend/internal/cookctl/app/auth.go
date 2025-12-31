@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"flag"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -10,6 +11,57 @@ import (
 	"github.com/saiaj/cooking_app/backend/internal/cookctl/client"
 	"github.com/saiaj/cooking_app/backend/internal/cookctl/credentials"
 )
+
+type authLoginFlags struct {
+	username      string
+	passwordStdin bool
+	tokenName     string
+	expiresAt     string
+}
+
+type authSetFlags struct {
+	token      string
+	tokenStdin bool
+	apiURL     string
+}
+
+type authLogoutFlags struct {
+	revoke bool
+}
+
+func authSetFlagSet(out io.Writer) (*flag.FlagSet, *authSetFlags) {
+	opts := &authSetFlags{}
+	flags := newFlagSet("auth set", out, printAuthSetUsage)
+	flags.StringVar(&opts.token, "token", "", "Personal access token")
+	flags.BoolVar(&opts.tokenStdin, "token-stdin", false, "Read token from stdin")
+	flags.StringVar(&opts.apiURL, "api-url", "", "API base URL override")
+	return flags, opts
+}
+
+func authLoginFlagSet(out io.Writer) (*flag.FlagSet, *authLoginFlags) {
+	opts := &authLoginFlags{}
+	flags := newFlagSet("auth login", out, printAuthLoginUsage)
+	flags.StringVar(&opts.username, "username", "", "Username for login")
+	flags.BoolVar(&opts.passwordStdin, "password-stdin", false, "Read password from stdin")
+	flags.StringVar(&opts.tokenName, "token-name", "cookctl", "Name for the new PAT")
+	flags.StringVar(&opts.expiresAt, "expires-at", "", "Token expiration (RFC3339)")
+	return flags, opts
+}
+
+func authStatusFlagSet(out io.Writer) *flag.FlagSet {
+	return newFlagSet("auth status", out, printAuthStatusUsage)
+}
+
+func authWhoAmIFlagSet(out io.Writer) *flag.FlagSet {
+	return newFlagSet("auth whoami", out, printAuthWhoAmIUsage)
+}
+
+func authLogoutFlagSet(out io.Writer) (*flag.FlagSet, *authLogoutFlags) {
+	opts := &authLogoutFlags{}
+	flags := newFlagSet("auth logout", out, printAuthLogoutUsage)
+	flags.BoolVar(&opts.revoke, "revoke", false, "Revoke stored token before clearing credentials")
+	return flags, opts
+}
 
 func (a *App) runAuth(args []string) int {
 	if len(args) > 0 && isHelpFlag(args[0]) {
@@ -33,7 +85,7 @@ func (a *App) runAuth(args []string) int {
 	case "logout":
 		return a.runAuthLogout(args[1:])
 	default:
-		writef(a.stderr, "unknown auth command: %s\n", args[0])
+		usageErrorf(a.stderr, "unknown auth command: %s", args[0])
 		printAuthUsage(a.stderr)
 		return exitUsage
 	}
@@ -45,43 +97,31 @@ func (a *App) runAuthSet(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("auth set", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var token string
-	var tokenStdin bool
-	var apiURL string
-	flags.StringVar(&token, "token", "", "Personal access token")
-	flags.BoolVar(&tokenStdin, "token-stdin", false, "Read token from stdin")
-	flags.StringVar(&apiURL, "api-url", "", "API base URL override")
-
+	flags, opts := authSetFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
-	if tokenStdin && strings.TrimSpace(token) != "" {
-		writeLine(a.stderr, "token and token-stdin cannot be combined")
-		return exitUsage
+	if opts.tokenStdin && strings.TrimSpace(opts.token) != "" {
+		return usageError(a.stderr, "token and token-stdin cannot be combined")
 	}
-	if tokenStdin {
+	if opts.tokenStdin {
 		var err error
-		token, err = readToken(a.stdin)
+		opts.token, err = readToken(a.stdin)
 		if err != nil {
-			writeLine(a.stderr, err)
-			return exitUsage
+			return usageError(a.stderr, err.Error())
 		}
 	}
-	token = strings.TrimSpace(token)
-	if token == "" {
-		writeLine(a.stderr, "token is required (use --token or --token-stdin)")
-		return exitUsage
+	opts.token = strings.TrimSpace(opts.token)
+	if opts.token == "" {
+		return usageError(a.stderr, "token is required (use --token or --token-stdin)")
 	}
-	if strings.TrimSpace(apiURL) == "" {
-		apiURL = a.cfg.APIURL
+	if strings.TrimSpace(opts.apiURL) == "" {
+		opts.apiURL = a.cfg.APIURL
 	}
 
 	if err := a.store.Save(credentials.Credentials{
-		Token:  strings.TrimSpace(token),
-		APIURL: strings.TrimSpace(apiURL),
+		Token:  strings.TrimSpace(opts.token),
+		APIURL: strings.TrimSpace(opts.apiURL),
 	}); err != nil {
 		writeLine(a.stderr, err)
 		return exitError
@@ -96,34 +136,19 @@ func (a *App) runAuthLogin(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("auth login", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var username string
-	var passwordStdin bool
-	var tokenName string
-	var expiresAt string
-
-	flags.StringVar(&username, "username", "", "Username for login")
-	flags.BoolVar(&passwordStdin, "password-stdin", false, "Read password from stdin")
-	flags.StringVar(&tokenName, "token-name", "cookctl", "Name for the new PAT")
-	flags.StringVar(&expiresAt, "expires-at", "", "Token expiration (RFC3339)")
-
+	flags, opts := authLoginFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
-	if username == "" {
-		writeLine(a.stderr, "username is required")
-		return exitUsage
+	if opts.username == "" {
+		return usageError(a.stderr, "username is required")
 	}
-	if !passwordStdin {
-		writeLine(a.stderr, "password-stdin is required for auth login")
-		return exitUsage
+	if !opts.passwordStdin {
+		return usageError(a.stderr, "password-stdin is required for auth login")
 	}
-	tokenName = strings.TrimSpace(tokenName)
-	if tokenName == "" {
-		writeLine(a.stderr, "token-name is required")
-		return exitUsage
+	opts.tokenName = strings.TrimSpace(opts.tokenName)
+	if opts.tokenName == "" {
+		return usageError(a.stderr, "token-name is required")
 	}
 
 	password, err := readPassword(a.stdin)
@@ -132,16 +157,14 @@ func (a *App) runAuthLogin(args []string) int {
 		return exitError
 	}
 	if password == "" {
-		writeLine(a.stderr, "password is required")
-		return exitUsage
+		return usageError(a.stderr, "password is required")
 	}
 
 	var expiresAtTime *time.Time
-	if expiresAt != "" {
-		parsed, parseErr := time.Parse(time.RFC3339, expiresAt)
+	if opts.expiresAt != "" {
+		parsed, parseErr := time.Parse(time.RFC3339, opts.expiresAt)
 		if parseErr != nil {
-			writeLine(a.stderr, "expires-at must be RFC3339")
-			return exitUsage
+			return usageError(a.stderr, "expires-at must be RFC3339")
 		}
 		expiresAtTime = &parsed
 	}
@@ -160,7 +183,7 @@ func (a *App) runAuthLogin(args []string) int {
 		return exitError
 	}
 
-	resp, err := sessionClient.BootstrapToken(ctx, username, password, tokenName, expiresAtTime)
+	resp, err := sessionClient.BootstrapToken(ctx, opts.username, password, opts.tokenName, expiresAtTime)
 	if err != nil {
 		return a.handleAPIError(err)
 	}
@@ -193,8 +216,7 @@ func (a *App) runAuthStatus(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("auth status", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
+	flags := authStatusFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -244,29 +266,17 @@ func (a *App) runAuthWhoAmI(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("auth whoami", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
+	flags := authWhoAmIFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
-	}
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	resp, err := api.Me(ctx)
@@ -283,17 +293,12 @@ func (a *App) runAuthLogout(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("auth logout", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var revoke bool
-	flags.BoolVar(&revoke, "revoke", false, "Revoke stored token before clearing credentials")
-
+	flags, opts := authLogoutFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
 
-	if revoke {
+	if opts.revoke {
 		return a.runAuthLogoutRevoke()
 	}
 

@@ -105,8 +105,8 @@ func TestRecipes_Create(t *testing.T) {
   "recipe_book_id":%q,
   "tag_ids":[%q,%q],
   "ingredients":[
-    {"position":2,"quantity":0.5,"quantity_text":"1/2","unit":"lb","item":"carrot","prep":null,"notes":null,"original_text":"1/2 lb carrot"},
-    {"position":1,"quantity":1.0,"quantity_text":"1","unit":"lb","item":"chicken","prep":null,"notes":null,"original_text":"1 lb chicken"}
+    {"position":2,"quantity":0.5,"quantity_text":"1/2","unit":"lb","item_name":"carrot","prep":null,"notes":null,"original_text":"1/2 lb carrot"},
+    {"position":1,"quantity":1.0,"quantity_text":"1","unit":"lb","item_name":"chicken","prep":null,"notes":null,"original_text":"1 lb chicken"}
   ],
   "steps":[
     {"step_number":2,"instruction":"Serve."},
@@ -166,11 +166,14 @@ func TestRecipes_Create(t *testing.T) {
 	if len(created.Ingredients) != 2 {
 		t.Fatalf("ingredients len=%d, want 2", len(created.Ingredients))
 	}
-	if created.Ingredients[0].Position != 1 || created.Ingredients[0].Item != "chicken" {
+	if created.Ingredients[0].Position != 1 || created.Ingredients[0].Item.Name != "chicken" {
 		t.Fatalf("ingredients[0]=%#v, want position 1 chicken", created.Ingredients[0])
 	}
 	if created.Ingredients[0].ID == "" || created.Ingredients[1].ID == "" {
 		t.Fatalf("ingredient ids missing")
+	}
+	if created.Ingredients[0].Item.ID == "" || created.Ingredients[1].Item.ID == "" {
+		t.Fatalf("ingredient item ids missing")
 	}
 
 	if len(created.Steps) != 2 {
@@ -189,16 +192,34 @@ type recipeTagResponse struct {
 	Name string `json:"name"`
 }
 
+// groceryAisleResponse mirrors the aisle payload for recipe ingredient items.
+type groceryAisleResponse struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	SortGroup    int    `json:"sort_group"`
+	SortOrder    int    `json:"sort_order"`
+	NumericValue *int   `json:"numeric_value"`
+}
+
+// itemResponse mirrors the item payload for recipe ingredient items.
+type itemResponse struct {
+	ID       string                `json:"id"`
+	Name     string                `json:"name"`
+	StoreURL *string               `json:"store_url"`
+	Aisle    *groceryAisleResponse `json:"aisle"`
+}
+
+// recipeIngredientResponse mirrors the ingredient payload for recipe responses.
 type recipeIngredientResponse struct {
-	ID           string   `json:"id"`
-	Position     int      `json:"position"`
-	Quantity     *float64 `json:"quantity"`
-	QuantityText *string  `json:"quantity_text"`
-	Unit         *string  `json:"unit"`
-	Item         string   `json:"item"`
-	Prep         *string  `json:"prep"`
-	Notes        *string  `json:"notes"`
-	OriginalText *string  `json:"original_text"`
+	ID           string       `json:"id"`
+	Position     int          `json:"position"`
+	Quantity     *float64     `json:"quantity"`
+	QuantityText *string      `json:"quantity_text"`
+	Unit         *string      `json:"unit"`
+	Item         itemResponse `json:"item"`
+	Prep         *string      `json:"prep"`
+	Notes        *string      `json:"notes"`
+	OriginalText *string      `json:"original_text"`
 }
 
 type recipeStepResponse struct {

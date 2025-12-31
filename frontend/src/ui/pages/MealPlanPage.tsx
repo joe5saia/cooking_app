@@ -10,6 +10,10 @@ import {
   type MealPlanEntry,
 } from '../../api/mealPlans'
 import { listRecipes } from '../../api/recipes'
+import {
+  addShoppingListItemsFromMealPlan,
+  listShoppingLists,
+} from '../../api/shoppingLists'
 import { Button, Card, FormField, Input, Select } from '../components'
 import { Page } from './Page'
 import styles from './MealPlanPage.module.css'
@@ -78,6 +82,10 @@ export function MealPlanPage() {
   const [selectedRecipeId, setSelectedRecipeId] = useState('')
   const [recipeFilter, setRecipeFilter] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
+  const [shoppingListNotice, setShoppingListNotice] = useState<string | null>(
+    null,
+  )
+  const [selectedShoppingListID, setSelectedShoppingListID] = useState('')
   const queryClient = useQueryClient()
 
   const recipesQuery = useQuery({
@@ -121,6 +129,13 @@ export function MealPlanPage() {
         start: calendarRange.start,
         end: calendarRange.end,
       }),
+  })
+
+  const shoppingListsQuery = useQuery({
+    queryKey: ['shopping-lists', 'meal-plan', selectedDateKey],
+    queryFn: () =>
+      listShoppingLists({ start: selectedDateKey, end: selectedDateKey }),
+    enabled: activeView === 'day',
   })
 
   const mealPlan = useMemo(() => {
@@ -187,6 +202,21 @@ export function MealPlanPage() {
     },
   })
 
+  const addToShoppingListMutation = useMutation({
+    mutationFn: (params: { listID: string; date: string }) =>
+      addShoppingListItemsFromMealPlan(params.listID, params.date),
+    onSuccess: () => {
+      setShoppingListNotice('Added day ingredients to the shopping list.')
+    },
+    onError: (err) => {
+      setShoppingListNotice(
+        err instanceof ApiError
+          ? err.message
+          : 'Unable to add items to the shopping list.',
+      )
+    },
+  })
+
   /** Move the month view forward or backward. */
   function shiftMonth(delta: number) {
     setViewDate(
@@ -198,6 +228,8 @@ export function MealPlanPage() {
   function handleOpenDay(dayKey: string) {
     setSelectedDateKey(dayKey)
     setSelectedRecipeId('')
+    setSelectedShoppingListID('')
+    setShoppingListNotice(null)
     setActiveView('day')
     setNotice(null)
   }
@@ -214,6 +246,7 @@ export function MealPlanPage() {
   function handleBackToCalendar() {
     setActiveView('calendar')
     setNotice(null)
+    setShoppingListNotice(null)
   }
 
   /** Add the currently selected recipe to the chosen day. */
@@ -237,6 +270,17 @@ export function MealPlanPage() {
   /** Remove a recipe from the selected day. */
   function handleRemoveRecipe(recipeId: string) {
     deleteMealPlanMutation.mutate({ date: selectedDateKey, recipeID: recipeId })
+  }
+
+  function handleAddMealPlanToList() {
+    if (!selectedShoppingListID) {
+      setShoppingListNotice('Select a shopping list.')
+      return
+    }
+    addToShoppingListMutation.mutate({
+      listID: selectedShoppingListID,
+      date: selectedDateKey,
+    })
   }
 
   /** Render a day-level recipe link chip. */
@@ -461,6 +505,60 @@ export function MealPlanPage() {
                   <div className={styles.notice}>
                     Unable to load meal plan entries.
                   </div>
+                ) : null}
+              </div>
+
+              <div className={styles.shoppingListPanel}>
+                <FormField label="Shopping list for this day">
+                  {({ id, describedBy }) => (
+                    <Select
+                      id={id}
+                      aria-describedby={describedBy}
+                      value={selectedShoppingListID}
+                      onChange={(event) => {
+                        setSelectedShoppingListID(event.target.value)
+                        setShoppingListNotice(null)
+                      }}
+                      disabled={shoppingListsQuery.isPending}
+                    >
+                      <option value="">Select a list</option>
+                      {(shoppingListsQuery.data ?? []).map((list) => (
+                        <option key={list.id} value={list.id}>
+                          {list.name} • {list.list_date}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </FormField>
+                <div className={styles.shoppingListActions}>
+                  <Button
+                    variant="primary"
+                    type="button"
+                    onClick={handleAddMealPlanToList}
+                    disabled={addToShoppingListMutation.isPending}
+                  >
+                    {addToShoppingListMutation.isPending
+                      ? 'Adding…'
+                      : 'Add day to list'}
+                  </Button>
+                  <Link
+                    className={styles.shoppingListLink}
+                    to="/shopping-lists"
+                  >
+                    Manage lists
+                  </Link>
+                </div>
+                {shoppingListNotice ? (
+                  <div className={styles.notice}>{shoppingListNotice}</div>
+                ) : null}
+                {shoppingListsQuery.isError ? (
+                  <div className={styles.notice}>
+                    Unable to load shopping lists.
+                  </div>
+                ) : null}
+                {!shoppingListsQuery.isPending &&
+                (shoppingListsQuery.data ?? []).length === 0 ? (
+                  <div className={styles.notice}>No lists for this date.</div>
                 ) : null}
               </div>
             </Card>

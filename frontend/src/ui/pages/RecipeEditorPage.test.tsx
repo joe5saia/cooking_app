@@ -39,8 +39,9 @@ describe('RecipeEditorPage', () => {
   it('validates required fields', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = typeof input === 'string' ? input : input.toString()
+        const method = (init?.method ?? 'GET').toUpperCase()
         if (url.endsWith('/api/v1/recipe-books')) {
           return new Response(JSON.stringify([]), {
             status: 200,
@@ -48,6 +49,12 @@ describe('RecipeEditorPage', () => {
           })
         }
         if (url.endsWith('/api/v1/tags')) {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+        if (url.includes('/api/v1/items') && method === 'GET') {
           return new Response(JSON.stringify([]), {
             status: 200,
             headers: { 'content-type': 'application/json' },
@@ -90,11 +97,19 @@ describe('RecipeEditorPage', () => {
           )
         }
 
+        if (url.includes('/api/v1/items') && method === 'GET') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+
         if (url.endsWith('/api/v1/recipes') && method === 'POST') {
           const body = JSON.parse(String(init?.body ?? '{}')) as {
             title?: string
             steps?: Array<{ step_number: number; instruction: string }>
             ingredients?: Array<{
+              item_name?: string | null
               notes: string | null
               original_text: string | null
             }>
@@ -103,6 +118,9 @@ describe('RecipeEditorPage', () => {
             return new Response(null, { status: 400 })
           }
           if (!body.steps?.length || body.steps[0]?.step_number !== 1) {
+            return new Response(null, { status: 400 })
+          }
+          if (body.ingredients?.[0]?.item_name !== 'chicken') {
             return new Response(null, { status: 400 })
           }
           if (body.ingredients?.[0]?.notes !== 'Organic') {
@@ -188,6 +206,13 @@ describe('RecipeEditorPage', () => {
         }
 
         if (url.endsWith('/api/v1/tags') && method === 'GET') {
+          return new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        }
+
+        if (url.includes('/api/v1/items') && method === 'GET') {
           return new Response(JSON.stringify([]), {
             status: 200,
             headers: { 'content-type': 'application/json' },

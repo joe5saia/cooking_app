@@ -2,11 +2,61 @@ package app
 
 import (
 	"flag"
+	"io"
 	"strings"
 	"time"
 
 	"github.com/saiaj/cooking_app/backend/internal/cookctl/config"
 )
+
+type configViewFlags struct {
+	configPath string
+}
+
+type configSetFlags struct {
+	configPath string
+	apiURL     optionalString
+	output     optionalString
+	timeoutStr optionalString
+	debug      optionalBool
+}
+
+type configUnsetFlags struct {
+	configPath string
+	apiURL     bool
+	output     bool
+	timeout    bool
+	debug      bool
+}
+
+func configViewFlagSet(out io.Writer) (*flag.FlagSet, *configViewFlags) {
+	opts := &configViewFlags{}
+	flags := newFlagSet("config view", out, printConfigViewUsage)
+	flags.StringVar(&opts.configPath, "config", "", "Config file path")
+	return flags, opts
+}
+
+func configSetFlagSet(out io.Writer) (*flag.FlagSet, *configSetFlags) {
+	opts := &configSetFlags{}
+	flags := newFlagSet("config set", out, printConfigSetUsage)
+	flags.StringVar(&opts.configPath, "config", "", "Config file path")
+	flags.Var(&opts.apiURL, "api-url", "API base URL")
+	flags.Var(&opts.output, "output", "Output format: table|json")
+	flags.Var(&opts.timeoutStr, "timeout", "Request timeout (e.g. 30s)")
+	flags.Var(&opts.debug, "debug", "Enable debug logging")
+	return flags, opts
+}
+
+func configUnsetFlagSet(out io.Writer) (*flag.FlagSet, *configUnsetFlags) {
+	opts := &configUnsetFlags{}
+	flags := newFlagSet("config unset", out, printConfigUnsetUsage)
+	flags.StringVar(&opts.configPath, "config", "", "Config file path")
+	flags.BoolVar(&opts.apiURL, "api-url", false, "Clear api_url")
+	flags.BoolVar(&opts.output, "output", false, "Clear output")
+	flags.BoolVar(&opts.timeout, "timeout", false, "Clear timeout")
+	flags.BoolVar(&opts.debug, "debug", false, "Clear debug")
+	return flags, opts
+}
 
 func (a *App) runConfig(args []string) int {
 	if len(args) > 0 && isHelpFlag(args[0]) {
@@ -28,7 +78,7 @@ func (a *App) runConfig(args []string) int {
 	case "path":
 		return a.runConfigPath(args[1:])
 	default:
-		writef(a.stderr, "unknown config command: %s\n", args[0])
+		usageErrorf(a.stderr, "unknown config command: %s", args[0])
 		printConfigUsage(a.stderr)
 		return exitUsage
 	}
@@ -40,34 +90,28 @@ func (a *App) runConfigView(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("config view", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var configPath string
-	flags.StringVar(&configPath, "config", "", "Config file path")
-
+	flags, opts := configViewFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
 
-	configPath = strings.TrimSpace(configPath)
-	if configPath == "" {
+	opts.configPath = strings.TrimSpace(opts.configPath)
+	if opts.configPath == "" {
 		path, err := config.DefaultConfigPath()
 		if err != nil {
 			writeLine(a.stderr, err)
 			return exitError
 		}
-		configPath = path
+		opts.configPath = path
 	}
 
-	cfg, err := config.Load(configPath)
+	cfg, err := config.Load(opts.configPath)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 
 	view := configView{
-		ConfigPath: configPath,
+		ConfigPath: opts.configPath,
 		APIURL:     cfg.APIURL,
 		Output:     string(cfg.Output),
 		Timeout:    cfg.Timeout.String(),
@@ -82,71 +126,54 @@ func (a *App) runConfigSet(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("config set", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var configPath string
-	var apiURL optionalString
-	var output optionalString
-	var timeoutStr optionalString
-	var debug optionalBool
-
-	flags.StringVar(&configPath, "config", "", "Config file path")
-	flags.Var(&apiURL, "api-url", "API base URL")
-	flags.Var(&output, "output", "Output format: table|json")
-	flags.Var(&timeoutStr, "timeout", "Request timeout (e.g. 30s)")
-	flags.Var(&debug, "debug", "Enable debug logging")
-
+	flags, opts := configSetFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
 
-	configPath = strings.TrimSpace(configPath)
-	if configPath == "" {
+	opts.configPath = strings.TrimSpace(opts.configPath)
+	if opts.configPath == "" {
 		path, err := config.DefaultConfigPath()
 		if err != nil {
 			writeLine(a.stderr, err)
 			return exitError
 		}
-		configPath = path
+		opts.configPath = path
 	}
 
-	cfg, err := config.LoadFile(configPath)
+	cfg, err := config.LoadFile(opts.configPath)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 
-	if apiURL.set {
-		cfg.APIURL = apiURL.value
+	if opts.apiURL.set {
+		cfg.APIURL = opts.apiURL.value
 	}
-	if output.set {
-		parsed, err := config.ParseOutput(output.value)
+	if opts.output.set {
+		parsed, err := config.ParseOutput(opts.output.value)
 		if err != nil {
-			writeLine(a.stderr, err)
-			return exitUsage
+			return usageError(a.stderr, err.Error())
 		}
 		cfg.Output = parsed
 	}
-	if timeoutStr.set {
-		timeout, err := time.ParseDuration(timeoutStr.value)
+	if opts.timeoutStr.set {
+		timeout, err := time.ParseDuration(opts.timeoutStr.value)
 		if err != nil {
-			writeLine(a.stderr, "timeout must be a duration (e.g. 30s)")
-			return exitUsage
+			return usageError(a.stderr, "timeout must be a duration (e.g. 30s)")
 		}
 		cfg.Timeout = timeout
 	}
-	if debug.set {
-		cfg.Debug = debug.value
+	if opts.debug.set {
+		cfg.Debug = opts.debug.value
 	}
 
-	if err := config.Save(configPath, cfg); err != nil {
+	if err := config.Save(opts.configPath, cfg); err != nil {
 		writeLine(a.stderr, err)
 		return exitError
 	}
 
 	view := configView{
-		ConfigPath: configPath,
+		ConfigPath: opts.configPath,
 		APIURL:     cfg.APIURL,
 		Output:     string(cfg.Output),
 		Timeout:    cfg.Timeout.String(),
@@ -161,66 +188,50 @@ func (a *App) runConfigUnset(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("config unset", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var configPath string
-	var apiURL bool
-	var output bool
-	var timeout bool
-	var debug bool
-
-	flags.StringVar(&configPath, "config", "", "Config file path")
-	flags.BoolVar(&apiURL, "api-url", false, "Clear api_url")
-	flags.BoolVar(&output, "output", false, "Clear output")
-	flags.BoolVar(&timeout, "timeout", false, "Clear timeout")
-	flags.BoolVar(&debug, "debug", false, "Clear debug")
-
+	flags, opts := configUnsetFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
-	if !apiURL && !output && !timeout && !debug {
-		writeLine(a.stderr, "at least one flag is required")
-		return exitUsage
+	if !opts.apiURL && !opts.output && !opts.timeout && !opts.debug {
+		return usageError(a.stderr, "at least one flag is required")
 	}
 
-	configPath = strings.TrimSpace(configPath)
-	if configPath == "" {
+	opts.configPath = strings.TrimSpace(opts.configPath)
+	if opts.configPath == "" {
 		path, err := config.DefaultConfigPath()
 		if err != nil {
 			writeLine(a.stderr, err)
 			return exitError
 		}
-		configPath = path
+		opts.configPath = path
 	}
 
-	cfg, err := config.LoadFile(configPath)
+	cfg, err := config.LoadFile(opts.configPath)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 	defaults := config.Default()
 
-	if apiURL {
+	if opts.apiURL {
 		cfg.APIURL = defaults.APIURL
 	}
-	if output {
+	if opts.output {
 		cfg.Output = defaults.Output
 	}
-	if timeout {
+	if opts.timeout {
 		cfg.Timeout = defaults.Timeout
 	}
-	if debug {
+	if opts.debug {
 		cfg.Debug = defaults.Debug
 	}
 
-	if err := config.Save(configPath, cfg); err != nil {
+	if err := config.Save(opts.configPath, cfg); err != nil {
 		writeLine(a.stderr, err)
 		return exitError
 	}
 
 	view := configView{
-		ConfigPath: configPath,
+		ConfigPath: opts.configPath,
 		APIURL:     cfg.APIURL,
 		Output:     string(cfg.Output),
 		Timeout:    cfg.Timeout.String(),
@@ -235,8 +246,7 @@ func (a *App) runConfigPath(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("config path", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
+	flags := newFlagSet("config path", a.stderr, printConfigPathUsage)
 
 	if err := flags.Parse(args); err != nil {
 		return exitUsage

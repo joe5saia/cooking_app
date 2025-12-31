@@ -38,6 +38,9 @@ type fakeRecipeWorkflowQueries struct {
 	createRecipeIngredient func(ctx context.Context, arg sqlc.CreateRecipeIngredientParams) error
 	createRecipeStep       func(ctx context.Context, arg sqlc.CreateRecipeStepParams) error
 	createRecipeTag        func(ctx context.Context, arg sqlc.CreateRecipeTagParams) error
+	getItemByID            func(ctx context.Context, id pgtype.UUID) (sqlc.GetItemByIDRow, error)
+	getItemByName          func(ctx context.Context, name string) (sqlc.Item, error)
+	createItem             func(ctx context.Context, arg sqlc.CreateItemParams) (sqlc.Item, error)
 	getRecipeDeletedAtByID func(ctx context.Context, id pgtype.UUID) (pgtype.Timestamptz, error)
 	updateRecipeByID       func(ctx context.Context, arg sqlc.UpdateRecipeByIDParams) (sqlc.Recipe, error)
 	deleteIngredientsByID  func(ctx context.Context, recipeID pgtype.UUID) error
@@ -71,6 +74,30 @@ func (f fakeRecipeWorkflowQueries) CreateRecipeTag(ctx context.Context, arg sqlc
 		return errors.New("CreateRecipeTag not implemented")
 	}
 	return f.createRecipeTag(ctx, arg)
+}
+
+// GetItemByID delegates to the configured fake handler.
+func (f fakeRecipeWorkflowQueries) GetItemByID(ctx context.Context, id pgtype.UUID) (sqlc.GetItemByIDRow, error) {
+	if f.getItemByID == nil {
+		return sqlc.GetItemByIDRow{}, errors.New("GetItemByID not implemented")
+	}
+	return f.getItemByID(ctx, id)
+}
+
+// GetItemByName delegates to the configured fake handler.
+func (f fakeRecipeWorkflowQueries) GetItemByName(ctx context.Context, name string) (sqlc.Item, error) {
+	if f.getItemByName == nil {
+		return sqlc.Item{}, errors.New("GetItemByName not implemented")
+	}
+	return f.getItemByName(ctx, name)
+}
+
+// CreateItem delegates to the configured fake handler.
+func (f fakeRecipeWorkflowQueries) CreateItem(ctx context.Context, arg sqlc.CreateItemParams) (sqlc.Item, error) {
+	if f.createItem == nil {
+		return sqlc.Item{}, errors.New("CreateItem not implemented")
+	}
+	return f.createItem(ctx, arg)
 }
 
 func (f fakeRecipeWorkflowQueries) GetRecipeDeletedAtByID(ctx context.Context, id pgtype.UUID) (pgtype.Timestamptz, error) {
@@ -117,7 +144,7 @@ func validCreateRecipeRequest() createRecipeRequest {
 		PrepTimeMinutes:  5,
 		TotalTimeMinutes: 10,
 		Ingredients: []recipeIngredientRequest{
-			{Position: 1, Item: "Tortillas"},
+			{Position: 1, ItemName: stringPtr("Tortillas")},
 		},
 		Steps: []recipeStepRequest{
 			{StepNumber: 1, Instruction: "Assemble."},
@@ -372,3 +399,5 @@ func TestMapRecipeUsecaseError(t *testing.T) {
 		}
 	})
 }
+
+// stringPtr returns a string pointer for inline literals.

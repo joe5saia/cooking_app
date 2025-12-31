@@ -115,7 +115,7 @@ func TestRecipes_Update(t *testing.T) {
   "notes":null,
   "recipe_book_id":%q,
   "tag_ids":[%q],
-  "ingredients":[{"position":1,"quantity":1.0,"quantity_text":"1","unit":"lb","item":"chicken","prep":null,"notes":null,"original_text":null}],
+  "ingredients":[{"position":1,"quantity":1.0,"quantity_text":"1","unit":"lb","item_name":"chicken","prep":null,"notes":null,"original_text":null}],
   "steps":[{"step_number":1,"instruction":"Boil."}]
 }`, recipeTitleChickenSoup, bookAID, tagSoupID)
 
@@ -152,7 +152,7 @@ func TestRecipes_Update(t *testing.T) {
   "notes":"Updated notes",
   "recipe_book_id":%q,
   "tag_ids":[%q],
-  "ingredients":[{"position":1,"quantity":2.0,"quantity_text":"2","unit":"tbsp","item":"salt","prep":null,"notes":null,"original_text":null}],
+  "ingredients":[{"position":1,"quantity":2.0,"quantity_text":"2","unit":"tbsp","item_name":"salt","prep":null,"notes":null,"original_text":null}],
   "steps":[{"step_number":1,"instruction":"Mix."},{"step_number":2,"instruction":"Serve."}]
 }`, recipeTitleBeefStew, bookBID, tagBeefID)
 
@@ -189,7 +189,7 @@ func TestRecipes_Update(t *testing.T) {
 	if len(updated.Tags) != 1 || updated.Tags[0].ID != tagBeefID {
 		t.Fatalf("tags=%v, want beef tag", updated.Tags)
 	}
-	if len(updated.Ingredients) != 1 || updated.Ingredients[0].Item != "salt" {
+	if len(updated.Ingredients) != 1 || updated.Ingredients[0].Item.Name != "salt" {
 		t.Fatalf("ingredients=%v, want salt only", updated.Ingredients)
 	}
 	if len(updated.Steps) != 2 || updated.Steps[1].StepNumber != 2 {

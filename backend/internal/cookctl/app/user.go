@@ -3,8 +3,39 @@ package app
 import (
 	"context"
 	"flag"
+	"io"
 	"strings"
 )
+
+type userCreateFlags struct {
+	username      string
+	passwordStdin bool
+	displayName   string
+}
+
+type userDeactivateFlags struct {
+	yes bool
+}
+
+func userListFlagSet(out io.Writer) *flag.FlagSet {
+	return newFlagSet("user list", out, printUserListUsage)
+}
+
+func userCreateFlagSet(out io.Writer) (*flag.FlagSet, *userCreateFlags) {
+	opts := &userCreateFlags{}
+	flags := newFlagSet("user create", out, printUserCreateUsage)
+	flags.StringVar(&opts.username, "username", "", "Username")
+	flags.BoolVar(&opts.passwordStdin, "password-stdin", false, "Read password from stdin")
+	flags.StringVar(&opts.displayName, "display-name", "", "Display name")
+	return flags, opts
+}
+
+func userDeactivateFlagSet(out io.Writer) (*flag.FlagSet, *userDeactivateFlags) {
+	opts := &userDeactivateFlags{}
+	flags := newFlagSet("user deactivate", out, printUserDeactivateUsage)
+	flags.BoolVar(&opts.yes, "yes", false, "Confirm user deactivation")
+	return flags, opts
+}
 
 func (a *App) runUser(args []string) int {
 	if len(args) > 0 && isHelpFlag(args[0]) {
@@ -24,7 +55,7 @@ func (a *App) runUser(args []string) int {
 	case "deactivate":
 		return a.runUserDeactivate(args[1:])
 	default:
-		writef(a.stderr, "unknown user command: %s\n", args[0])
+		usageErrorf(a.stderr, "unknown user command: %s", args[0])
 		printUserUsage(a.stderr)
 		return exitUsage
 	}
@@ -36,29 +67,17 @@ func (a *App) runUserList(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("user list", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
+	flags := userListFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
-	}
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	resp, err := api.Users(ctx)
@@ -75,28 +94,16 @@ func (a *App) runUserCreate(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("user create", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var username string
-	var passwordStdin bool
-	var displayName string
-
-	flags.StringVar(&username, "username", "", "Username")
-	flags.BoolVar(&passwordStdin, "password-stdin", false, "Read password from stdin")
-	flags.StringVar(&displayName, "display-name", "", "Display name")
-
+	flags, opts := userCreateFlagSet(a.stderr)
 	if err := flags.Parse(args); err != nil {
 		return exitUsage
 	}
-	username = strings.TrimSpace(username)
-	if username == "" {
-		writeLine(a.stderr, "username is required")
-		return exitUsage
+	opts.username = strings.TrimSpace(opts.username)
+	if opts.username == "" {
+		return usageError(a.stderr, "username is required")
 	}
-	if !passwordStdin {
-		writeLine(a.stderr, "password-stdin is required for user create")
-		return exitUsage
+	if !opts.passwordStdin {
+		return usageError(a.stderr, "password-stdin is required for user create")
 	}
 
 	password, err := readPassword(a.stdin)
@@ -105,36 +112,24 @@ func (a *App) runUserCreate(args []string) int {
 		return exitError
 	}
 	if password == "" {
-		writeLine(a.stderr, "password is required")
-		return exitUsage
+		return usageError(a.stderr, "password is required")
 	}
 
 	var displayNamePtr *string
-	displayName = strings.TrimSpace(displayName)
-	if displayName != "" {
-		displayNamePtr = &displayName
-	}
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
+	opts.displayName = strings.TrimSpace(opts.displayName)
+	if opts.displayName != "" {
+		displayNamePtr = &opts.displayName
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
-	resp, err := api.CreateUser(ctx, username, password, displayNamePtr)
+	resp, err := api.CreateUser(ctx, opts.username, password, displayNamePtr)
 	if err != nil {
 		return a.handleAPIError(err)
 	}
@@ -148,44 +143,25 @@ func (a *App) runUserDeactivate(args []string) int {
 		return exitOK
 	}
 
-	flags := flag.NewFlagSet("user deactivate", flag.ContinueOnError)
-	flags.SetOutput(a.stderr)
-
-	var yes bool
-	flags.BoolVar(&yes, "yes", false, "Confirm user deactivation")
-
+	flags, opts := userDeactivateFlagSet(a.stderr)
 	id, err := parseIDArgs(flags, args)
 	if err != nil {
-		writeLine(a.stderr, err)
-		return exitUsage
+		return usageError(a.stderr, err.Error())
 	}
 	if id == "" {
-		writeLine(a.stderr, "user id is required")
-		return exitUsage
+		return usageError(a.stderr, "user id is required")
 	}
-	if !yes {
-		writeLine(a.stderr, "confirmation required; re-run with --yes")
-		return exitUsage
+	if !opts.yes {
+		return usageError(a.stderr, "confirmation required; re-run with --yes")
 	}
 	id = strings.TrimSpace(id)
-
-	token, _, err := a.resolveToken()
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
-	}
-	if token == "" {
-		writeLine(a.stderr, "no token found; run `cookctl auth set --token <pat>`")
-		return exitAuth
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), a.cfg.Timeout)
 	defer cancel()
 
-	api, err := a.apiClient(ctx, token)
-	if err != nil {
-		writeLine(a.stderr, err)
-		return exitError
+	api, exitCode := a.authedClient(ctx)
+	if exitCode != exitOK {
+		return exitCode
 	}
 
 	if err := api.DeactivateUser(ctx, id); err != nil {

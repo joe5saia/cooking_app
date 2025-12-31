@@ -2,8 +2,6 @@
 package app
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,7 +19,6 @@ import (
 	"github.com/saiaj/cooking_app/backend/internal/cookctl/client"
 	"github.com/saiaj/cooking_app/backend/internal/cookctl/config"
 	"github.com/saiaj/cooking_app/backend/internal/cookctl/credentials"
-	"golang.org/x/term"
 )
 
 const (
@@ -64,19 +61,20 @@ var (
 )
 
 type globalFlagSpec struct {
-	name       string
-	takesValue bool
+	name        string
+	takesValue  bool
+	description string
 }
 
 var globalFlags = map[string]globalFlagSpec{
-	"--api-url":           {name: "--api-url", takesValue: true},
-	"--output":            {name: "--output", takesValue: true},
-	"--timeout":           {name: "--timeout", takesValue: true},
-	"--debug":             {name: "--debug"},
-	"--version":           {name: "--version"},
-	"--help":              {name: "--help"},
-	"--skip-health-check": {name: "--skip-health-check"},
-	"-h":                  {name: "-h"},
+	"--api-url":           {name: "--api-url", takesValue: true, description: "API base URL"},
+	"--output":            {name: "--output", takesValue: true, description: "Output format: table|json"},
+	"--timeout":           {name: "--timeout", takesValue: true, description: "Request timeout (e.g. 30s)"},
+	"--debug":             {name: "--debug", description: "Enable debug logging"},
+	"--version":           {name: "--version", description: "Show version and exit"},
+	"--help":              {name: "--help", description: "Show help and exit"},
+	"--skip-health-check": {name: "--skip-health-check", description: "Skip API health preflight"},
+	"-h":                  {name: "-h", description: "Show help and exit"},
 }
 
 // Run executes the cookctl CLI and returns a process exit code.
@@ -87,18 +85,15 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	cfg, err := config.Load("")
 	if err != nil {
-		writeLine(stderr, err)
-		return exitUsage
+		return usageError(stderr, err.Error())
 	}
 
 	globalArgs, commandArgs, err := splitGlobalArgs(args[1:])
 	if err != nil {
-		writeLine(stderr, err)
-		return exitUsage
+		return usageError(stderr, err.Error())
 	}
 
-	flags := flag.NewFlagSet("cookctl", flag.ContinueOnError)
-	flags.SetOutput(stderr)
+	flags := newFlagSet("cookctl", stderr, printUsage)
 	flags.StringVar(&cfg.APIURL, "api-url", cfg.APIURL, "API base URL")
 	flags.Var(&cfg.Output, "output", "Output format: table|json")
 	flags.DurationVar(&cfg.Timeout, "timeout", cfg.Timeout, "Request timeout (e.g. 30s)")
@@ -129,8 +124,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if showVersion {
 		if len(commandArgs) != 0 {
-			writeLine(stderr, "version flag does not accept arguments")
-			return exitUsage
+			return usageError(stderr, "version flag does not accept arguments")
 		}
 		info := versionInfo{
 			Version: Version,
@@ -160,36 +154,13 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		checkHealth:    !skipHealthCheck,
 	}
 
-	switch commandArgs[0] {
-	case "health":
-		return app.runHealth(commandArgs[1:])
-	case "version":
-		return app.runVersion(commandArgs[1:])
-	case "completion":
-		return app.runCompletion(commandArgs[1:])
-	case "help":
-		return app.runHelp(commandArgs[1:])
-	case "auth":
-		return app.runAuth(commandArgs[1:])
-	case "token":
-		return app.runToken(commandArgs[1:])
-	case "tag":
-		return app.runTag(commandArgs[1:])
-	case "book":
-		return app.runBook(commandArgs[1:])
-	case "user":
-		return app.runUser(commandArgs[1:])
-	case "recipe":
-		return app.runRecipe(commandArgs[1:])
-	case "meal-plan":
-		return app.runMealPlan(commandArgs[1:])
-	case "config":
-		return app.runConfig(commandArgs[1:])
-	default:
-		writef(stderr, "unknown command: %s\n", commandArgs[0])
+	cmd := findCommand(commandRegistry(), commandArgs[0])
+	if cmd == nil || cmd.Run == nil {
+		usageErrorf(stderr, "unknown command: %s", commandArgs[0])
 		printUsage(stderr)
 		return exitUsage
 	}
+	return cmd.Run(app, commandArgs[1:])
 }
 
 // splitGlobalArgs extracts global flags from args while preserving command order.
@@ -500,9 +471,28 @@ type tagDeleteResult struct {
 	Deleted bool   `json:"deleted"`
 }
 
+// itemDeleteResult captures delete responses for items.
+type itemDeleteResult struct {
+	ID      string `json:"id"`
+	Deleted bool   `json:"deleted"`
+}
+
 type bookDeleteResult struct {
 	ID      string `json:"id"`
 	Deleted bool   `json:"deleted"`
+}
+
+// shoppingListDeleteResult captures delete responses for shopping lists.
+type shoppingListDeleteResult struct {
+	ID      string `json:"id"`
+	Deleted bool   `json:"deleted"`
+}
+
+// shoppingListItemDeleteResult captures delete responses for shopping list items.
+type shoppingListItemDeleteResult struct {
+	ShoppingListID string `json:"shopping_list_id"`
+	ItemID         string `json:"item_id"`
+	Deleted        bool   `json:"deleted"`
 }
 
 type userDeactivateResult struct {
@@ -525,19 +515,6 @@ type mealPlanDeleteResult struct {
 	Date     string `json:"date"`
 	RecipeID string `json:"recipe_id"`
 	Deleted  bool   `json:"deleted"`
-}
-
-type recipeUpsertPayload struct {
-	Title            string                   `json:"title"`
-	Servings         int                      `json:"servings"`
-	PrepTimeMinutes  int                      `json:"prep_time_minutes"`
-	TotalTimeMinutes int                      `json:"total_time_minutes"`
-	SourceURL        *string                  `json:"source_url"`
-	Notes            *string                  `json:"notes"`
-	RecipeBookID     *string                  `json:"recipe_book_id"`
-	TagIDs           []string                 `json:"tag_ids"`
-	Ingredients      []recipeIngredientUpsert `json:"ingredients"`
-	Steps            []recipeStepUpsert       `json:"steps"`
 }
 
 // recipeListItemWithCounts adds counts to recipe list results.
@@ -613,24 +590,6 @@ func (o *optionalBool) String() string {
 
 func (o *optionalBool) IsBoolFlag() bool {
 	return true
-}
-
-// recipeIngredientUpsert captures an ingredient payload for recipe upserts.
-type recipeIngredientUpsert struct {
-	Position     int      `json:"position"`
-	Quantity     *float64 `json:"quantity"`
-	QuantityText *string  `json:"quantity_text"`
-	Unit         *string  `json:"unit"`
-	ItemID       *string  `json:"item_id"`
-	ItemName     string   `json:"item_name"`
-	Prep         *string  `json:"prep"`
-	Notes        *string  `json:"notes"`
-	OriginalText *string  `json:"original_text"`
-}
-
-type recipeStepUpsert struct {
-	StepNumber  int    `json:"step_number"`
-	Instruction string `json:"instruction"`
 }
 
 func defaultStore() (*credentials.Store, error) {
@@ -831,6 +790,34 @@ func writeTable(w io.Writer, data interface{}) int {
 			return exitError
 		}
 		return exitOK
+	case []client.Item:
+		writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		writeLine(writer, "ID\tNAME\tSTORE_URL\tAISLE")
+		for _, item := range value {
+			writef(writer, "%s\t%s\t%s\t%s\n",
+				item.ID,
+				item.Name,
+				formatOptionalString(item.StoreURL),
+				formatAisleName(item.Aisle),
+			)
+		}
+		if err := writer.Flush(); err != nil {
+			return exitError
+		}
+		return exitOK
+	case client.Item:
+		writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		writeLine(writer, "ID\tNAME\tSTORE_URL\tAISLE")
+		writef(writer, "%s\t%s\t%s\t%s\n",
+			value.ID,
+			value.Name,
+			formatOptionalString(value.StoreURL),
+			formatAisleName(value.Aisle),
+		)
+		if err := writer.Flush(); err != nil {
+			return exitError
+		}
+		return exitOK
 	case client.Tag:
 		writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 		writeLine(writer, "ID\tNAME\tCREATED_AT")
@@ -839,6 +826,14 @@ func writeTable(w io.Writer, data interface{}) int {
 			value.Name,
 			value.CreatedAt.Format(time.RFC3339),
 		)
+		if err := writer.Flush(); err != nil {
+			return exitError
+		}
+		return exitOK
+	case itemDeleteResult:
+		writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		writeLine(writer, "ID\tDELETED")
+		writef(writer, "%s\t%t\n", value.ID, value.Deleted)
 		if err := writer.Flush(); err != nil {
 			return exitError
 		}
@@ -861,6 +856,75 @@ func writeTable(w io.Writer, data interface{}) int {
 				book.CreatedAt.Format(time.RFC3339),
 			)
 		}
+		if err := writer.Flush(); err != nil {
+			return exitError
+		}
+		return exitOK
+	case []client.ShoppingList:
+		writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		writeLine(writer, "ID\tDATE\tNAME\tNOTES\tUPDATED_AT")
+		for _, list := range value {
+			writef(writer, "%s\t%s\t%s\t%s\t%s\n",
+				list.ID,
+				list.ListDate,
+				list.Name,
+				formatOptionalString(list.Notes),
+				list.UpdatedAt.Format(time.RFC3339),
+			)
+		}
+		if err := writer.Flush(); err != nil {
+			return exitError
+		}
+		return exitOK
+	case client.ShoppingList:
+		writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		writeLine(writer, "ID\tDATE\tNAME\tNOTES\tUPDATED_AT")
+		writef(writer, "%s\t%s\t%s\t%s\t%s\n",
+			value.ID,
+			value.ListDate,
+			value.Name,
+			formatOptionalString(value.Notes),
+			value.UpdatedAt.Format(time.RFC3339),
+		)
+		if err := writer.Flush(); err != nil {
+			return exitError
+		}
+		return exitOK
+	case client.ShoppingListDetail:
+		if err := writeShoppingListDetailTable(w, value); err != nil {
+			return exitError
+		}
+		return exitOK
+	case []client.ShoppingListItem:
+		writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		writeLine(writer, "ID\tITEM_ID\tITEM_NAME\tAISLE\tQTY\tUNIT\tPURCHASED\tPURCHASED_AT")
+		for _, item := range value {
+			writeShoppingListItemRow(writer, item)
+		}
+		if err := writer.Flush(); err != nil {
+			return exitError
+		}
+		return exitOK
+	case client.ShoppingListItem:
+		writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		writeLine(writer, "ID\tITEM_ID\tITEM_NAME\tAISLE\tQTY\tUNIT\tPURCHASED\tPURCHASED_AT")
+		writeShoppingListItemRow(writer, value)
+		if err := writer.Flush(); err != nil {
+			return exitError
+		}
+		return exitOK
+	case shoppingListDeleteResult:
+		writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		writeLine(writer, "ID\tDELETED")
+		writef(writer, "%s\t%t\n", value.ID, value.Deleted)
+		if err := writer.Flush(); err != nil {
+			return exitError
+		}
+		return exitOK
+	case shoppingListItemDeleteResult:
+		writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+		writeLine(writer, "SHOPPING_LIST_ID\tITEM_ID\tDELETED")
+		writef(writer, "%s\t%s\t%t\n", value.ShoppingListID, value.ItemID, value.Deleted)
 		if err := writer.Flush(); err != nil {
 			return exitError
 		}
@@ -1120,6 +1184,78 @@ func writeRecipeDetailTable(w io.Writer, recipe client.RecipeDetail) error {
 	return nil
 }
 
+// writeShoppingListDetailTable renders a human-readable shopping list detail view.
+func writeShoppingListDetailTable(w io.Writer, list client.ShoppingListDetail) error {
+	writer := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	writeLine(writer, "FIELD\tVALUE")
+	writef(writer, "id\t%s\n", list.ID)
+	writef(writer, "date\t%s\n", list.ListDate)
+	writef(writer, "name\t%s\n", list.Name)
+	writef(writer, "notes\t%s\n", formatOptionalString(list.Notes))
+	writef(writer, "updated_at\t%s\n", list.UpdatedAt.Format(time.RFC3339))
+	if err := writer.Flush(); err != nil {
+		return err
+	}
+
+	writeLine(w, "items:")
+	if len(list.Items) == 0 {
+		writeLine(w, "  (none)")
+		return nil
+	}
+
+	itemWriter := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	writeLine(itemWriter, "ITEM_ID\tITEM_NAME\tAISLE\tQTY\tUNIT\tPURCHASED\tPURCHASED_AT")
+	for _, item := range list.Items {
+		writeShoppingListItemRow(itemWriter, item)
+	}
+	if err := itemWriter.Flush(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// writeShoppingListItemRow writes a single shopping list item row to a writer.
+func writeShoppingListItemRow(w io.Writer, item client.ShoppingListItem) {
+	purchasedAt := ""
+	if item.PurchasedAt != nil {
+		purchasedAt = item.PurchasedAt.Format(time.RFC3339)
+	}
+	writef(w, "%s\t%s\t%s\t%s\t%s\t%s\t%t\t%s\n",
+		item.ID,
+		item.Item.ID,
+		item.Item.Name,
+		formatAisleName(item.Item.Aisle),
+		formatShoppingListQuantity(item.Quantity, item.QuantityText),
+		formatOptionalString(item.Unit),
+		item.IsPurchased,
+		purchasedAt,
+	)
+}
+
+// formatOptionalString returns a trimmed string for optional values.
+func formatOptionalString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
+}
+
+// formatAisleName returns the aisle name for an item.
+func formatAisleName(aisle *client.GroceryAisle) string {
+	if aisle == nil {
+		return ""
+	}
+	return strings.TrimSpace(aisle.Name)
+}
+
+// formatShoppingListQuantity formats quantities with fallback to quantity text.
+func formatShoppingListQuantity(quantity *float64, quantityText *string) string {
+	if quantity != nil {
+		return formatQuantity(*quantity)
+	}
+	return formatOptionalString(quantityText)
+}
+
 // formatIngredientLine renders a single ingredient line.
 func formatIngredientLine(ingredient client.RecipeIngredient) string {
 	if ingredient.OriginalText != nil {
@@ -1199,118 +1335,6 @@ func readToken(r io.Reader) (string, error) {
 	return readSecret(r, "token")
 }
 
-func readJSONFile(path string) (json.RawMessage, error) {
-	//nolint:gosec // Path is user-supplied by design for reading recipe payloads.
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read file: %w", err)
-	}
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return nil, errors.New("file is empty")
-	}
-	return readJSONBytes(raw)
-}
-
-func readJSONReader(r io.Reader) (json.RawMessage, error) {
-	raw, err := io.ReadAll(r)
-	if err != nil {
-		return nil, fmt.Errorf("read input: %w", err)
-	}
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return nil, errors.New("input is empty")
-	}
-	return readJSONBytes(raw)
-}
-
-func readJSONBytes(raw []byte) (json.RawMessage, error) {
-	var payload map[string]json.RawMessage
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	if err := decoder.Decode(&payload); err != nil {
-		return nil, fmt.Errorf("invalid json: %w", err)
-	}
-	if len(payload) == 0 {
-		return nil, errors.New("json object is empty")
-	}
-	return json.RawMessage(raw), nil
-}
-
-// readRawJSONFile reads JSON bytes without enforcing object-only payloads.
-func readRawJSONFile(path string) ([]byte, error) {
-	//nolint:gosec // Path is user-supplied by design for reading recipe payloads.
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read file: %w", err)
-	}
-	return readRawJSONBytes(raw)
-}
-
-// readRawJSONReader reads JSON bytes from a reader without enforcing object-only payloads.
-func readRawJSONReader(r io.Reader) ([]byte, error) {
-	raw, err := io.ReadAll(r)
-	if err != nil {
-		return nil, fmt.Errorf("read input: %w", err)
-	}
-	return readRawJSONBytes(raw)
-}
-
-// readRawJSONBytes validates that JSON is non-empty.
-func readRawJSONBytes(raw []byte) ([]byte, error) {
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return nil, errors.New("input is empty")
-	}
-	return raw, nil
-}
-
-// splitJSONPayloads splits JSON into one or more object payloads.
-func splitJSONPayloads(raw []byte) ([]json.RawMessage, error) {
-	trimmed := bytes.TrimSpace(raw)
-	if len(trimmed) == 0 {
-		return nil, errors.New("input is empty")
-	}
-	if trimmed[0] == '[' {
-		var items []json.RawMessage
-		if err := json.Unmarshal(trimmed, &items); err != nil {
-			return nil, fmt.Errorf("invalid json array: %w", err)
-		}
-		if len(items) == 0 {
-			return nil, errors.New("json array is empty")
-		}
-		return items, nil
-	}
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal(trimmed, &payload); err != nil {
-		return nil, fmt.Errorf("invalid json object: %w", err)
-	}
-	if len(payload) == 0 {
-		return nil, errors.New("json object is empty")
-	}
-	return []json.RawMessage{json.RawMessage(trimmed)}, nil
-}
-
-// recipeTitleFromJSON extracts the title field for duplicate checks.
-func recipeTitleFromJSON(raw json.RawMessage) (string, error) {
-	var payload struct {
-		Title string `json:"title"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return "", fmt.Errorf("invalid recipe payload: %w", err)
-	}
-	title := strings.TrimSpace(payload.Title)
-	if title == "" {
-		return "", errors.New("title is required")
-	}
-	return title, nil
-}
-
-// isTerminal reports whether the reader is a terminal.
-func isTerminal(r io.Reader) bool {
-	file, ok := r.(*os.File)
-	if !ok {
-		return false
-	}
-	return term.IsTerminal(int(file.Fd()))
-}
-
 func formatRecipeTags(tags []client.RecipeTag) string {
 	if len(tags) == 0 {
 		return ""
@@ -1320,117 +1344,6 @@ func formatRecipeTags(tags []client.RecipeTag) string {
 		names = append(names, tag.Name)
 	}
 	return strings.Join(names, ",")
-}
-
-// recipeTemplatePayload returns a starter payload with placeholders.
-func recipeTemplatePayload() recipeUpsertPayload {
-	ingredient := "Ingredient"
-	step := "Add steps here"
-	return recipeUpsertPayload{
-		Title:            "New Recipe",
-		Servings:         1,
-		PrepTimeMinutes:  0,
-		TotalTimeMinutes: 0,
-		RecipeBookID:     nil,
-		TagIDs:           []string{},
-		Ingredients: []recipeIngredientUpsert{
-			{
-				Position:     1,
-				ItemName:     ingredient,
-				OriginalText: &ingredient,
-			},
-		},
-		Steps: []recipeStepUpsert{
-			{
-				StepNumber:  1,
-				Instruction: step,
-			},
-		},
-	}
-}
-
-// buildRecipePayloadInteractive prompts for recipe fields and returns a payload.
-func buildRecipePayloadInteractive(stdin io.Reader, stderr io.Writer, ctx context.Context, api *client.Client) (recipeUpsertPayload, error) {
-	prompter := newPromptInput(stdin, stderr)
-	title, err := prompter.askRequired("Title")
-	if err != nil {
-		return recipeUpsertPayload{}, err
-	}
-	servings, err := prompter.askInt("Servings", 1, 1)
-	if err != nil {
-		return recipeUpsertPayload{}, err
-	}
-	prepMinutes, err := prompter.askInt("Prep time minutes", 0, 0)
-	if err != nil {
-		return recipeUpsertPayload{}, err
-	}
-	totalMinutes, err := prompter.askInt("Total time minutes", 0, 0)
-	if err != nil {
-		return recipeUpsertPayload{}, err
-	}
-	sourceURL, err := prompter.askOptional("Source URL (optional)")
-	if err != nil {
-		return recipeUpsertPayload{}, err
-	}
-	notes, err := prompter.askOptional("Notes (optional)")
-	if err != nil {
-		return recipeUpsertPayload{}, err
-	}
-	bookRaw, err := prompter.askOptional("Recipe book (name or id, optional)")
-	if err != nil {
-		return recipeUpsertPayload{}, err
-	}
-
-	var bookID *string
-	if bookRaw != nil && strings.TrimSpace(*bookRaw) != "" {
-		resolvedID, resolveErr := resolveBookID(ctx, api, *bookRaw)
-		if resolveErr != nil {
-			return recipeUpsertPayload{}, resolveErr
-		}
-		bookID = &resolvedID
-	}
-
-	tagRaw, err := prompter.askOptional("Tags (comma-separated, optional)")
-	if err != nil {
-		return recipeUpsertPayload{}, err
-	}
-	tagIDs := []string{}
-	if tagRaw != nil && strings.TrimSpace(*tagRaw) != "" {
-		tagNames := splitCommaSeparated(*tagRaw)
-		resolvedIDs, resolveErr := resolveTagIDsByName(ctx, api, tagNames, true)
-		if resolveErr != nil {
-			return recipeUpsertPayload{}, resolveErr
-		}
-		tagIDs = resolvedIDs
-	}
-
-	writeLine(stderr, "Enter ingredients (blank to finish):")
-	ingredients, err := prompter.askIngredients()
-	if err != nil {
-		return recipeUpsertPayload{}, err
-	}
-
-	writeLine(stderr, "Enter steps (blank to finish):")
-	steps, err := prompter.askSteps()
-	if err != nil {
-		return recipeUpsertPayload{}, err
-	}
-	if len(steps) == 0 {
-		return recipeUpsertPayload{}, errors.New("at least one step is required")
-	}
-
-	return recipeUpsertPayload{
-		Title:            title,
-		Servings:         servings,
-		PrepTimeMinutes:  prepMinutes,
-		TotalTimeMinutes: totalMinutes,
-		SourceURL:        sourceURL,
-		Notes:            notes,
-		RecipeBookID:     bookID,
-		TagIDs:           tagIDs,
-		Ingredients:      ingredients,
-		Steps:            steps,
-	}, nil
 }
 
 // resolveBookID resolves a book identifier (name or id).
@@ -1663,19 +1576,6 @@ func mergeIDs(existing, additions []string) []string {
 	return out
 }
 
-// splitCommaSeparated splits comma-separated values into trimmed fields.
-func splitCommaSeparated(raw string) []string {
-	parts := strings.Split(raw, ",")
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
-		if trimmed != "" {
-			out = append(out, trimmed)
-		}
-	}
-	return out
-}
-
 // formatRecipeCandidates renders candidate titles for disambiguation.
 func formatRecipeCandidates(items []client.RecipeListItem) string {
 	if len(items) == 0 {
@@ -1689,133 +1589,6 @@ func formatRecipeCandidates(items []client.RecipeListItem) string {
 	return strings.Join(candidates, "; ")
 }
 
-// promptInput wraps interactive prompting helpers.
-type promptInput struct {
-	reader *bufio.Reader
-	writer io.Writer
-}
-
-// newPromptInput creates a prompt helper for interactive input.
-func newPromptInput(r io.Reader, w io.Writer) *promptInput {
-	return &promptInput{
-		reader: bufio.NewReader(r),
-		writer: w,
-	}
-}
-
-// ask prompts for a single line of input.
-func (p *promptInput) ask(label string) (string, error) {
-	if _, err := fmt.Fprintf(p.writer, "%s: ", label); err != nil {
-		return "", err
-	}
-	line, err := p.reader.ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
-		return "", err
-	}
-	line = strings.TrimSpace(line)
-	if errors.Is(err, io.EOF) && line == "" {
-		return "", io.EOF
-	}
-	return line, nil
-}
-
-// askRequired prompts until a non-empty value is provided.
-func (p *promptInput) askRequired(label string) (string, error) {
-	for {
-		value, err := p.ask(label)
-		if err != nil {
-			return "", err
-		}
-		if strings.TrimSpace(value) != "" {
-			return value, nil
-		}
-	}
-}
-
-// askOptional prompts for an optional value.
-func (p *promptInput) askOptional(label string) (*string, error) {
-	value, err := p.ask(label)
-	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil, nil
-	}
-	return &trimmed, nil
-}
-
-// askInt prompts for an integer with defaults and a minimum.
-func (p *promptInput) askInt(label string, defaultValue, minValue int) (int, error) {
-	for {
-		value, err := p.ask(fmt.Sprintf("%s [%d]", label, defaultValue))
-		if err != nil {
-			return 0, err
-		}
-		if strings.TrimSpace(value) == "" {
-			return defaultValue, nil
-		}
-		parsed, err := strconv.Atoi(strings.TrimSpace(value))
-		if err != nil {
-			writeLine(p.writer, "Enter a valid number.")
-			continue
-		}
-		if parsed < minValue {
-			writeLine(p.writer, fmt.Sprintf("Value must be >= %d.", minValue))
-			continue
-		}
-		return parsed, nil
-	}
-}
-
-// askIngredients collects ingredient lines.
-func (p *promptInput) askIngredients() ([]recipeIngredientUpsert, error) {
-	ingredients := []recipeIngredientUpsert{}
-	for {
-		line, err := p.ask("Ingredient")
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return ingredients, nil
-			}
-			return nil, err
-		}
-		if strings.TrimSpace(line) == "" {
-			return ingredients, nil
-		}
-		trimmed := strings.TrimSpace(line)
-		ingredients = append(ingredients, recipeIngredientUpsert{
-			Position:     len(ingredients) + 1,
-			ItemName:     trimmed,
-			OriginalText: &trimmed,
-		})
-	}
-}
-
-// askSteps collects recipe steps.
-func (p *promptInput) askSteps() ([]recipeStepUpsert, error) {
-	steps := []recipeStepUpsert{}
-	for {
-		line, err := p.ask("Step")
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				return steps, nil
-			}
-			return nil, err
-		}
-		if strings.TrimSpace(line) == "" {
-			return steps, nil
-		}
-		trimmed := strings.TrimSpace(line)
-		steps = append(steps, recipeStepUpsert{
-			StepNumber:  len(steps) + 1,
-			Instruction: trimmed,
-		})
-	}
-}
-
 func splitEditorArgs(command string) ([]string, error) {
 	command = strings.TrimSpace(command)
 	if command == "" {
@@ -1826,50 +1599,6 @@ func splitEditorArgs(command string) ([]string, error) {
 		return nil, errors.New("editor is empty")
 	}
 	return parts, nil
-}
-
-func toUpsertPayload(recipe client.RecipeDetail) recipeUpsertPayload {
-	tagIDs := make([]string, 0, len(recipe.Tags))
-	for _, tag := range recipe.Tags {
-		tagIDs = append(tagIDs, tag.ID)
-	}
-
-	ingredients := make([]recipeIngredientUpsert, 0, len(recipe.Ingredients))
-	for _, ingredient := range recipe.Ingredients {
-		itemID := stringPtrIfNotEmpty(ingredient.Item.ID)
-		ingredients = append(ingredients, recipeIngredientUpsert{
-			Position:     ingredient.Position,
-			Quantity:     ingredient.Quantity,
-			QuantityText: ingredient.QuantityText,
-			Unit:         ingredient.Unit,
-			ItemID:       itemID,
-			ItemName:     ingredient.Item.Name,
-			Prep:         ingredient.Prep,
-			Notes:        ingredient.Notes,
-			OriginalText: ingredient.OriginalText,
-		})
-	}
-
-	steps := make([]recipeStepUpsert, 0, len(recipe.Steps))
-	for _, step := range recipe.Steps {
-		steps = append(steps, recipeStepUpsert{
-			StepNumber:  step.StepNumber,
-			Instruction: step.Instruction,
-		})
-	}
-
-	return recipeUpsertPayload{
-		Title:            recipe.Title,
-		Servings:         recipe.Servings,
-		PrepTimeMinutes:  recipe.PrepTimeMinutes,
-		TotalTimeMinutes: recipe.TotalTimeMinutes,
-		SourceURL:        recipe.SourceURL,
-		Notes:            recipe.Notes,
-		RecipeBookID:     recipe.RecipeBookID,
-		TagIDs:           tagIDs,
-		Ingredients:      ingredients,
-		Steps:            steps,
-	}
 }
 
 func parseIDArgs(flags *flag.FlagSet, args []string) (string, error) {
